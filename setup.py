@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 
 setup(
-    name = 'transformers',
+    name = 'transformers_sklearn',
     version = "1.0.0",
     author = 'trueto',
     author_email='3130103836@zju.edu.cn',
