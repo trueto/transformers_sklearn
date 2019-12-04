@@ -15,6 +15,8 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 from torch.utils.data.distributed import DistributedSampler
 
 from sklearn.base import BaseEstimator,ClassifierMixin
+from sklearn.metrics.classification import classification_report
+
 from transformers import BertConfig,BertForSequenceClassification,BertTokenizer
 from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassification
 from transformers import XLMConfig,XLMForSequenceClassification,XLMTokenizer
@@ -220,26 +222,27 @@ class ClassificationClassifier(BaseEstimator,ClassifierMixin):
         #     # model = model_class.from_pretrained(self.output_dir)
         #     # tokenizer = tokenizer_class.from_pretrained(self.output_dir)
         #     # model.to(self.device)
-        self.model = model
-        self.tokenizer = tokenizer
+        # self.model = model
+        # self.tokenizer = tokenizer
         return self
 
     def predict_proba(self,X):
+        args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
         # Load a trained model and vocabulary that you have fine-tuned
-        _, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
-        model = model_class.from_pretrained(self.output_dir)
-        tokenizer = tokenizer_class.from_pretrained(self.output_dir)
-        model.to(self.device)
+        _, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+        model = model_class.from_pretrained(args.output_dir)
+        tokenizer = tokenizer_class.from_pretrained(args.output_dir)
+        model.to(args.device)
 
         # prepare data
         processor = ClassificationProcessor(X)
-        test_batch_size = self.per_gpu_eval_batch_size * max(1, self.n_gpu)
-        test_dataset = load_and_cache_examples(self,tokenizer,processor,[None],evaluate=True)
-        test_sampler = SequentialSampler(test_dataset) if self.local_rank == -1 else DistributedSampler(test_dataset)
+        test_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+        test_dataset = load_and_cache_examples(args,tokenizer,processor,[None],evaluate=True)
+        test_sampler = SequentialSampler(test_dataset) if args.local_rank == -1 else DistributedSampler(test_dataset)
         test_dataloader = DataLoader(test_dataset,sampler=test_sampler, batch_size=test_batch_size)
 
         # multi-gpu eval
-        if self.n_gpu > 1:
+        if args.n_gpu > 1:
             model = torch.nn.DataParallel(model)
         # Predict
         logger.info("***** Running predict*****")
@@ -250,7 +253,7 @@ class ClassificationClassifier(BaseEstimator,ClassifierMixin):
 
         for batch in tqdm(test_dataloader,desc='Predicting'):
             model.eval()
-            batch = tuple(t.to(self.device) for t in batch)
+            batch = tuple(t.to(args.device) for t in batch)
 
             with torch.no_grad():
                 inputs = {
@@ -258,9 +261,9 @@ class ClassificationClassifier(BaseEstimator,ClassifierMixin):
                     'attention_mask': batch[1],
                     'labels': batch[3]
                 }
-                if self.model_type != 'distilbert':
+                if args.model_type != 'distilbert':
                     # XLM, DistilBERT and RoBERTa don't use segment_ids
-                    inputs['token_type_ids'] = batch[2] if self.model_type in ['bert','xlnet'] else None
+                    inputs['token_type_ids'] = batch[2] if args.model_type in ['bert','xlnet'] else None
                 outputs = model(**inputs)
                 _, logits = outputs[:2]
             prob = F.softmax(logits, dim=-1)
@@ -272,10 +275,17 @@ class ClassificationClassifier(BaseEstimator,ClassifierMixin):
         return probs
 
     def predict(self,X):
+        args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
         probs = self.predict_proba(X)
         preds = np.argmax(probs, axis=1)
-        y_pred = np.array([self.id2label[y] for y in preds])
+        y_pred = np.array([args.id2label[y] for y in preds])
         return y_pred
+
+    def score(self, X, y, sample_weight=None):
+        y_pred = self.predict(X)
+        reports = classification_report(y,y_pred,digits=4)
+        logger.info(reports)
+        return reports
 
 def train(args, train_dataset, model):
     """ Train the model """
@@ -337,7 +347,7 @@ def train(args, train_dataset, model):
     tr_loss, logging_loss = 0.0, 0.0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
-    set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
+    set_seed(seed=args.seed,n_gpu=args.n_gpu) # Added here for reproductibility (even between python 2 and 3)
     for _ in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
@@ -377,7 +387,7 @@ def train(args, train_dataset, model):
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
                     if args.local_rank == -1 and args.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
-                        results = evaluate(args, val_ds, model)
+                        results = evaluate(args, val_ds, model,prefix=global_step)
                         for key, value in results.items():
                             tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
                     tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
@@ -418,8 +428,8 @@ def evaluate(args, val_dataset, model, prefix=""):
     eval_dataloader = DataLoader(val_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
     # multi-gpu eval
-    if args.n_gpu > 1:
-        model = torch.nn.DataParallel(model)
+    # if args.n_gpu > 1:
+    #     model = torch.nn.DataParallel(model)
 
     # Eval!
     logger.info("***** Running evaluation {} *****".format(prefix))
@@ -457,7 +467,7 @@ def evaluate(args, val_dataset, model, prefix=""):
     result = acc_and_f1(preds, out_label_ids)
     results.update(result)
 
-    output_eval_file = os.path.join(args.output_dir, prefix, "eval_results.txt")
+    output_eval_file = os.path.join(args.output_dir, "eval_results_{}.txt".format(prefix))
     with open(output_eval_file, "w") as writer:
         logger.info("***** Eval results {} *****".format(prefix))
         for key in sorted(result.keys()):
