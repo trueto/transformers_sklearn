@@ -1,1 +1,2 @@
 from .classification import ALL_MODELS,ClassificationClassifier
+from .token_classification import TokenClassificationClassifier
