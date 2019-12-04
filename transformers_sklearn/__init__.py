@@ -1,1 +1,1 @@
-from .classification import ALL_MODELS
+from .classification import ALL_MODELS,ClassificationClassifier

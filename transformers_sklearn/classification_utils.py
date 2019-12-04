@@ -1,108 +1,78 @@
-import csv
-import sys
+import os
 import copy
 import json
 import logging
+import torch
 from .data_utils import unpack_data
-from sklearn.utils.multiclass import unique_labels
+from torch.utils.data import TensorDataset
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
-class InputExample(object):
-    """
-    A single training/test example for simple sequence classification.
+try:
+    from scipy.stats import pearsonr, spearmanr
+    from sklearn.metrics import matthews_corrcoef, f1_score
+    _has_sklearn = True
+except (AttributeError, ImportError) as e:
+    logger.warning("To use data.metrics please install scikit-learn. See https://scikit-learn.org/stable/index.html")
+    _has_sklearn = False
 
-    Args:
-        guid: Unique id for the example.
-        text_a: string. The untokenized text of the first sequence. For single
-        sequence tasks, only this sequence must be specified.
-        text_b: (Optional) string. The untokenized text of the second sequence.
-        Only must be specified for sequence pair tasks.
-        label: (Optional) string. The label of the example. This should be
-        specified for train and dev examples, but not for test examples.
-    """
-    def __init__(self, guid, text_a, text_b=None, label=None):
-        self.guid = guid
-        self.text_a = text_a
-        self.text_b = text_b
-        self.label = label
+def is_sklearn_available():
+    return _has_sklearn
 
-    def __repr__(self):
-        return str(self.to_json_string())
+if _has_sklearn:
 
-    def to_dict(self):
-        """Serializes this instance to a Python dictionary."""
-        output = copy.deepcopy(self.__dict__)
-        return output
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
-
-class InputFeatures(object):
-    """
-    A single set of features of data.
-
-    Args:
-        input_ids: Indices of input sequence tokens in the vocabulary.
-        attention_mask: Mask to avoid performing attention on padding token indices.
-            Mask values selected in ``[0, 1]``:
-            Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
-        token_type_ids: Segment token indices to indicate first and second portions of the inputs.
-        label: Label corresponding to the input
-    """
-
-    def __init__(self, input_ids, attention_mask, token_type_ids, label):
-        self.input_ids = input_ids
-        self.attention_mask = attention_mask
-        self.token_type_ids = token_type_ids
-        self.label = label
-
-    def __repr__(self):
-        return str(self.to_json_string())
-
-    def to_dict(self):
-        """Serializes this instance to a Python dictionary."""
-        output = copy.deepcopy(self.__dict__)
-        return output
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+    def simple_accuracy(preds, labels):
+        return (preds == labels).mean()
 
 
-class ClassificationProcessor:
+    def acc_and_f1(preds, labels):
+        acc = simple_accuracy(preds, labels)
+        f1 = f1_score(y_true=labels, y_pred=preds)
+        return {
+            "acc": acc,
+            "f1": f1,
+            "acc_and_f1": (acc + f1) / 2,
+        }
 
-    def __init__(self,X,y=None):
-        self.texts_a,self.texts_b,self.labels = unpack_data(X,y)
+def load_and_cache_examples(args, tokenizer,processor,label_list,evaluate=False):
+    if args.local_rank not in [-1, 0] and not evaluate:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
-    def get_labels(self):
-        return unique_labels(self.labels) if self.labels else None
+    # Load data features from cache or dataset file
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}'.format(
+        'test' if evaluate else 'train',
+        list(filter(None, args.model_name_or_path.split('/'))).pop(),
+        str(args.max_seq_length)))
+    if os.path.exists(cached_features_file) and not args.overwrite_cache:
+        logger.info("Loading features from cached file %s", cached_features_file)
+        features = torch.load(cached_features_file)
+    else:
+        logger.info("Creating features from dataset file at %s", args.data_dir)
+        examples = processor.get_examples()
+        features = convert_examples_to_features(examples,
+                                                tokenizer,
+                                                label_list=label_list,
+                                                max_length=args.max_seq_length,
+                                                pad_on_left=bool(args.model_type in ['xlnet']),
+                                                # pad on the left for xlnet
+                                                pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
+                                                pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
+                                                )
+        if args.local_rank in [-1, 0]:
+            logger.info("Saving features into cached file %s", cached_features_file)
+            torch.save(features, cached_features_file)
 
-    def get_examples(self):
-        examples = []
-        if self.texts_b and self.labels:
-            for i,(text_a,text_b,label) in enumerate(zip(self.texts_a,self.texts_b,self.labels)):
-                guid = "%s-%s" % ("classfication", i)
-                examples.append(InputExample(guid,text_a,text_b,label))
+    if args.local_rank == 0 and not evaluate:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
-        if not self.texts_b and self.labels:
-            for i,(text_a,label) in enumerate(zip(self.texts_a,self.labels)):
-                guid = "%s-%s" % ("classfication", i)
-                examples.append(InputExample(guid,text_a,None,label))
-
-        if self.texts_b and not self.labels:
-            for i, (text_a, text_b) in enumerate(zip(self.texts_a, self.texts_b)):
-                guid = "%s-%s" % ("classfication", i)
-                examples.append(InputExample(guid, text_a, text_b, None))
-
-        if not self.texts_b and not self.labels:
-            for i, text_a, in enumerate(self.texts_a):
-                guid = "%s-%s" % ("classfication", i)
-                examples.append(InputExample(guid, text_a, None, None))
-
-        return examples
-
+    # Convert to Tensors and build dataset
+    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+    all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
+    all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+    return dataset
 
 def convert_examples_to_features(examples, tokenizer,
                                   max_length=512,
@@ -181,3 +151,104 @@ def convert_examples_to_features(examples, tokenizer,
                               token_type_ids=token_type_ids,
                               label=label))
     return features
+
+class InputExample(object):
+    """
+    A single training/test example for simple sequence classification.
+
+    Args:
+        guid: Unique id for the example.
+        text_a: string. The untokenized text of the first sequence. For single
+        sequence tasks, only this sequence must be specified.
+        text_b: (Optional) string. The untokenized text of the second sequence.
+        Only must be specified for sequence pair tasks.
+        label: (Optional) string. The label of the example. This should be
+        specified for train and dev examples, but not for test examples.
+    """
+    def __init__(self, guid, text_a, text_b=None, label=None):
+        self.guid = guid
+        self.text_a = text_a
+        self.text_b = text_b
+        self.label = label
+
+    def __repr__(self):
+        return str(self.to_json_string())
+
+    def to_dict(self):
+        """Serializes this instance to a Python dictionary."""
+        output = copy.deepcopy(self.__dict__)
+        return output
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+
+class InputFeatures(object):
+    """
+    A single set of features of data.
+
+    Args:
+        input_ids: Indices of input sequence tokens in the vocabulary.
+        attention_mask: Mask to avoid performing attention on padding token indices.
+            Mask values selected in ``[0, 1]``:
+            Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
+        token_type_ids: Segment token indices to indicate first and second portions of the inputs.
+        label: Label corresponding to the input
+    """
+
+    def __init__(self, input_ids, attention_mask, token_type_ids, label):
+        self.input_ids = input_ids
+        self.attention_mask = attention_mask
+        self.token_type_ids = token_type_ids
+        self.label = label
+
+    def __repr__(self):
+        return str(self.to_json_string())
+
+    def to_dict(self):
+        """Serializes this instance to a Python dictionary."""
+        output = copy.deepcopy(self.__dict__)
+        return output
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+
+
+class ClassificationProcessor:
+
+    def __init__(self,X,y=None):
+        self.texts_a,self.texts_b,self.labels = unpack_data(X,y)
+
+    def get_labels(self):
+        if self.labels is None:
+            return [None]
+        else:
+            return np.unique(self.labels)
+
+    def get_examples(self):
+        examples = []
+        if isinstance(self.texts_b,np.ndarray) and isinstance(self.labels,np.ndarray):
+            for i,(text_a,text_b,label) in enumerate(zip(self.texts_a,self.texts_b,self.labels)):
+                guid = "%s-%s" % ("classfication", i)
+                examples.append(InputExample(guid,text_a,text_b,label))
+
+        if self.texts_b is None and isinstance(self.labels,np.ndarray):
+            for i,(text_a,label) in enumerate(zip(self.texts_a,self.labels)):
+                guid = "%s-%s" % ("classfication", i)
+                examples.append(InputExample(guid,text_a,None,label))
+
+        if isinstance(self.texts_b,np.ndarray) and self.labels is None:
+            for i, (text_a, text_b) in enumerate(zip(self.texts_a, self.texts_b)):
+                guid = "%s-%s" % ("classfication", i)
+                examples.append(InputExample(guid, text_a, text_b, None))
+
+        if self.texts_b is None and self.labels is None:
+            for i, text_a, in enumerate(self.texts_a):
+                guid = "%s-%s" % ("classfication", i)
+                examples.append(InputExample(guid, text_a, None, None))
+
+        return examples
+
+
+
