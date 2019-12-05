@@ -8,7 +8,7 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import random_split,TensorDataset,\
     DistributedSampler,RandomSampler,SequentialSampler,DataLoader
 from tensorboardX import SummaryWriter
-from .ner_utils import get_labels,\
+from .token_classification_utils import get_labels,\
     read_examples_from_X_y,convert_examples_to_features
 from .data_utils import to_numpy
 from sklearn.base import BaseEstimator,ClassifierMixin
