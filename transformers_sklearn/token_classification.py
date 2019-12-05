@@ -44,7 +44,7 @@ def set_seed(seed=520,n_gpu=1):
     if n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
-class TokenClassificationClassifier(BaseEstimator,ClassifierMixin):
+class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
 
     def __init__(self,data_dir='ts_data',model_type='bert',
                  model_name_or_path='bert-base-chinese',
@@ -393,7 +393,7 @@ def train(args, train_dataset, model, tokenizer, labels, pad_token_label_id):
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
                     if args.local_rank == -1 and args.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
-                        results, _ = evaluate(args, val_ds, model, tokenizer, labels, pad_token_label_id, mode="dev")
+                        results, _ = evaluate(args, val_ds, model,labels, pad_token_label_id,prefix=global_step)
                         for key, value in results.items():
                             tb_writer.add_scalar("eval_{}".format(key), value, global_step)
                     tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
@@ -423,7 +423,7 @@ def train(args, train_dataset, model, tokenizer, labels, pad_token_label_id):
     return global_step, tr_loss / global_step
 
 
-def evaluate(args, eval_dataset, model, tokenizer, labels, pad_token_label_id, mode, prefix=""):
+def evaluate(args, eval_dataset, model, labels, pad_token_label_id, prefix=0):
     # eval_dataset = load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, mode=mode)
 
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
@@ -489,8 +489,13 @@ def evaluate(args, eval_dataset, model, tokenizer, labels, pad_token_label_id, m
         "f1": f1_score(out_label_list, preds_list)
     }
 
-    logger.info("***** Eval results %s *****", prefix)
-    for key in sorted(results.keys()):
-        logger.info("  %s = %s", key, str(results[key]))
+    output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+    with open(output_eval_file, "a") as writer:
+        logger.info("***** Eval results %d *****", prefix)
+        writer.write("***** Eval results %d *****", prefix)
+        for key in sorted(results.keys()):
+            logger.info("  %s = %s", key, str(results[key]))
+            writer.write("%s = %s\n" % (key, str(results[key])))
+        writer.write('\n')
 
-    return results, preds_list
+    return results

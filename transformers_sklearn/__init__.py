@@ -1,2 +1,3 @@
-from .classification import ALL_MODELS,ClassificationClassifier
-from .token_classification import TokenClassificationClassifier
+from .classification import ALL_MODELS,BERTologyClassifier
+from .token_classification import BERTologyNERClassifer
+from .regression import BERTologyRegressor

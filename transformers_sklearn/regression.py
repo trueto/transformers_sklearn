@@ -4,17 +4,19 @@ import logging
 import random
 import numpy as np
 from tqdm import tqdm, trange
-import torch.nn.functional as F
+from scipy.stats import pearsonr, spearmanr
+from sklearn.base import BaseEstimator,RegressorMixin
+
 try:
     from torch.utils.tensorboard import SummaryWriter
 except:
     from tensorboardX import SummaryWriter
+
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset,random_split)
 from torch.utils.data.distributed import DistributedSampler
 
-from sklearn.base import BaseEstimator,ClassifierMixin
-from sklearn.metrics.classification import classification_report
+from .regression_utils import RegressionProcessor,load_and_cache_examples
 
 from transformers import BertConfig,BertForSequenceClassification,BertTokenizer
 from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassification
@@ -23,8 +25,6 @@ from transformers import XLNetConfig, XLNetTokenizer,XLNetForSequenceClassificat
 from transformers import DistilBertConfig,DistilBertForSequenceClassification,DistilBertTokenizer
 from transformers import  AlbertConfig,AlbertForSequenceClassification,AlbertTokenizer
 from transformers import AdamW, get_linear_schedule_with_warmup
-
-from .classification_utils import ClassificationProcessor,load_and_cache_examples,acc_and_f1
 
 logger = logging.getLogger(__name__)
 
@@ -47,22 +47,22 @@ def set_seed(seed=520,n_gpu=1):
     if n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
-class BERTologyClassifier(BaseEstimator,ClassifierMixin):
+class BERTologyRegressor(BaseEstimator,RegressorMixin):
 
-    def __init__(self,data_dir='ts_data',model_type='bert',
+    def __init__(self, data_dir='ts_data', model_type='bert',
                  model_name_or_path='bert-base-chinese',
-                 output_dir='ts_results',config_name='',
-                 tokenizer_name='',cache_dir='model_cache',
-                 max_seq_length=512,evaluate_during_training=True,
-                 do_lower_case=False,per_gpu_train_batch_size=8,
-                 per_gpu_eval_batch_size=8,gradient_accumulation_steps=1,
-                 learning_rate=5e-5,weight_decay=0.0,adam_epsilon=1e-8,
-                 max_grad_norm=1.0,num_train_epochs=3,max_steps=-1,
-                 warmup_steps=0,logging_steps=50,save_steps=50,
-                 eval_all_checkpoints=True,no_cuda=False,
-                 overwrite_output_dir=False,overwrite_cache=False,
-                 seed=520,fp16=False,fp16_opt_level='01',
-                 local_rank=-1,val_fraction=0.1):
+                 output_dir='ts_results', config_name='',
+                 tokenizer_name='', cache_dir='model_cache',
+                 max_seq_length=512, evaluate_during_training=True,
+                 do_lower_case=False, per_gpu_train_batch_size=8,
+                 per_gpu_eval_batch_size=8, gradient_accumulation_steps=1,
+                 learning_rate=5e-5, weight_decay=0.0, adam_epsilon=1e-8,
+                 max_grad_norm=1.0, num_train_epochs=3, max_steps=-1,
+                 warmup_steps=0, logging_steps=50, save_steps=50,
+                 eval_all_checkpoints=True, no_cuda=False,
+                 overwrite_output_dir=False, overwrite_cache=False,
+                 seed=520, fp16=False, fp16_opt_level='01',
+                 local_rank=-1, val_fraction=0.1):
         """
 
         :param data_dir: The input data dir.used for cache the train_data.
@@ -161,24 +161,22 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                        self.local_rank, device, self.n_gpu, bool(self.local_rank != -1), self.fp16)
 
         # Set seed
-        set_seed(seed=self.seed,n_gpu=self.n_gpu)
+        set_seed(seed=self.seed, n_gpu=self.n_gpu)
 
     def fit(self,X,y):
-        processor = ClassificationProcessor(X,y)
+        processor = RegressionProcessor(X,y)
         label_list = processor.get_labels()
         num_labels = len(label_list)
-
-        self.id2label = {i: label for i,label in enumerate(label_list)}
 
         # Load pretrained model and tokenizer
         if self.local_rank not in [-1, 0]:
             torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
         self.model_type = self.model_type.lower()
-
         config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
         config = config_class.from_pretrained(self.config_name if self.config_name else self.model_name_or_path,
                                               num_labels=num_labels,
+                                              finetuning_task=self.task_name,
                                               cache_dir=self.cache_dir if self.cache_dir else None)
         tokenizer = tokenizer_class.from_pretrained(
             self.tokenizer_name if self.tokenizer_name else self.model_name_or_path,
@@ -196,106 +194,102 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
 
         logger.info("Training/evaluation parameters %s", self)
 
-        train_dataset = load_and_cache_examples(self,tokenizer,processor,label_list)
-
-        global_step, tr_loss = train(self, train_dataset, model)
+        # Training
+        train_dataset = load_and_cache_examples(self, tokenizer, processor,mode='train')
+        global_step, tr_loss = train(self, train_dataset, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
-        # # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
+        # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
         if self.local_rank == -1 or torch.distributed.get_rank() == 0:
             # Create output directory if needed
             if not os.path.exists(self.output_dir) and self.local_rank in [-1, 0]:
                 os.makedirs(self.output_dir)
 
             logger.info("Saving model checkpoint to %s", self.output_dir)
-        #     # Save a trained model, configuration and tokenizer using `save_pretrained()`.
-        #     # They can then be reloaded using `from_pretrained()`
-            model_to_save = model.module if hasattr(model,'module') else model  # Take care of distributed/parallel training
+            # Save a trained model, configuration and tokenizer using `save_pretrained()`.
+            # They can then be reloaded using `from_pretrained()`
+            model_to_save = model.module if hasattr(model,
+                                                    'module') else model  # Take care of distributed/parallel training
             model_to_save.save_pretrained(self.output_dir)
             tokenizer.save_pretrained(self.output_dir)
-        #
-        #     # Good practice: save your training arguments together with the trained model
+
+            # Good practice: save your training arguments together with the trained model
             torch.save(self, os.path.join(self.output_dir, 'training_args.bin'))
 
-        #     # # Load a trained model and vocabulary that you have fine-tuned
-        #     # model = model_class.from_pretrained(self.output_dir)
-        #     # tokenizer = tokenizer_class.from_pretrained(self.output_dir)
-        #     # model.to(self.device)
-        # self.model = model
-        # self.tokenizer = tokenizer
-        return self
-
-    def predict_proba(self,X):
+    def predict(self,X):
         args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
+        config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
         # Load a trained model and vocabulary that you have fine-tuned
-        _, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
         model = model_class.from_pretrained(args.output_dir)
         tokenizer = tokenizer_class.from_pretrained(args.output_dir)
         model.to(args.device)
 
-        # prepare data
-        processor = ClassificationProcessor(X)
-        test_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-        test_dataset = load_and_cache_examples(args,tokenizer,processor,[None],evaluate=True)
-        test_sampler = SequentialSampler(test_dataset) if args.local_rank == -1 else DistributedSampler(test_dataset)
-        test_dataloader = DataLoader(test_dataset,sampler=test_sampler, batch_size=test_batch_size)
+        processor = RegressionProcessor(X,y=None)
+        test_dataset = load_and_cache_examples(args,tokenizer,processor,mode='test')
+
+        args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+        # Note that DistributedSampler samples randomly
+        eval_sampler = SequentialSampler(test_dataset) if args.local_rank == -1 else DistributedSampler(test_dataset)
+        eval_dataloader = DataLoader(test_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
         # multi-gpu eval
         if args.n_gpu > 1:
             model = torch.nn.DataParallel(model)
-        # Predict
-        logger.info("***** Running predict*****")
+
+        # Eval!
+        logger.info("***** Running Predict*****")
         logger.info("  Num examples = %d", len(test_dataset))
-        logger.info("  Batch size = %d", test_batch_size)
-
-        probs = None
-
-        for batch in tqdm(test_dataloader,desc='Predicting'):
+        logger.info("  Batch size = %d", args.eval_batch_size)
+        eval_loss = 0.0
+        nb_eval_steps = 0
+        preds = None
+        out_label_ids = None
+        for batch in tqdm(eval_dataloader, desc="Predicting"):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
 
             with torch.no_grad():
-                inputs = {
-                    'input_ids': batch[0],
-                    'attention_mask': batch[1],
-                    'labels': batch[3]
-                }
+                inputs = {'input_ids': batch[0],
+                          'attention_mask': batch[1],
+                          'labels': batch[3]}
                 if args.model_type != 'distilbert':
-                    # XLM, DistilBERT and RoBERTa don't use segment_ids
-                    inputs['token_type_ids'] = batch[2] if args.model_type in ['bert','xlnet'] else None
+                    inputs['token_type_ids'] = batch[2] if args.model_type in ['bert',
+                                                                               'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
                 outputs = model(**inputs)
-                _, logits = outputs[:2]
-            prob = F.softmax(logits, dim=-1)
-            if probs is None:
-                probs = prob.detach().cpu().numpy()
-            else:
-                prob = prob.detach().cpu().numpy()
-                probs = np.append(probs,prob,axis=0)
-        return probs
+                tmp_eval_loss, logits = outputs[:2]
 
-    def predict(self,X):
-        args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
-        probs = self.predict_proba(X)
-        preds = np.argmax(probs, axis=1)
-        y_pred = np.array([args.id2label[y] for y in preds])
-        return y_pred
+                eval_loss += tmp_eval_loss.mean().item()
+            nb_eval_steps += 1
+            if preds is None:
+                preds = logits.detach().cpu().numpy()
+            else:
+                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+
+        eval_loss = eval_loss / nb_eval_steps
+        preds = np.squeeze(preds)
+
+        return preds
 
     def score(self, X, y, sample_weight=None):
-        y_pred = self.predict(X)
-        reports = classification_report(y,y_pred,digits=4)
-        logger.info(reports)
-        return reports
+        y_prd = self.predict(X)
+        pearson_corr = pearsonr(y_prd, y)[0]
+        spearman_corr = spearmanr(y_prd, y)[0]
+        result = {
+            "pearson": pearson_corr,
+            "spearmanr": spearman_corr,
+            "corr": (pearson_corr + spearman_corr) / 2,
+        }
+        return result
 
-def train(args, train_dataset, model):
+def train(args, train_dataset, model, tokenizer):
     """ Train the model """
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-
-    val_len = int(len(train_dataset)*args.val_fraction)
+    val_len = int(len(train_dataset) * args.val_fraction)
     train_len = len(train_dataset) - val_len
-    train_ds, val_ds = random_split(train_dataset,[train_len, val_len])
+    train_ds, val_ds = random_split(train_dataset, [train_len, val_len])
 
     train_sampler = RandomSampler(train_ds) if args.local_rank == -1 else DistributedSampler(train_ds)
     train_dataloader = DataLoader(train_ds, sampler=train_sampler, batch_size=args.train_batch_size)
@@ -309,12 +303,14 @@ def train(args, train_dataset, model):
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+         'weight_decay': args.weight_decay},
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
+    ]
 
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps,
+                                                num_training_steps=t_total)
     if args.fp16:
         try:
             from apex import amp
@@ -338,7 +334,8 @@ def train(args, train_dataset, model):
     logger.info("  Num Epochs = %d", args.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
     logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
-                   args.train_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
+                args.train_batch_size * args.gradient_accumulation_steps * (
+                    torch.distributed.get_world_size() if args.local_rank != -1 else 1))
     logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
     logger.info("  Total optimization steps = %d", t_total)
 
@@ -346,22 +343,23 @@ def train(args, train_dataset, model):
     tr_loss, logging_loss = 0.0, 0.0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
-    set_seed(seed=args.seed,n_gpu=args.n_gpu) # Added here for reproductibility (even between python 2 and 3)
+    set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     for _ in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
-            inputs = {'input_ids':      batch[0],
+            inputs = {'input_ids': batch[0],
                       'attention_mask': batch[1],
-                      'labels':         batch[3]}
+                      'labels': batch[3]}
             if args.model_type != 'distilbert':
-                inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
+                inputs['token_type_ids'] = batch[2] if args.model_type in ['bert',
+                                                                           'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
             if args.n_gpu > 1:
-                loss = loss.mean() # mean() to average on multi-gpu parallel training
+                loss = loss.mean()  # mean() to average on multi-gpu parallel training
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
@@ -386,11 +384,11 @@ def train(args, train_dataset, model):
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
                     if args.local_rank == -1 and args.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
-                        results = evaluate(args, val_ds, model,prefix=global_step)
+                        results = evaluate(args, val_ds, model, prefix=global_step)
                         for key, value in results.items():
                             tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
                     tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar('loss', (tr_loss - logging_loss)/args.logging_steps, global_step)
+                    tb_writer.add_scalar('loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logging_loss = tr_loss
 
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
@@ -398,7 +396,8 @@ def train(args, train_dataset, model):
                     output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
-                    model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
+                    model_to_save = model.module if hasattr(model,
+                                                            'module') else model  # Take care of distributed/parallel training
                     model_to_save.save_pretrained(output_dir)
                     torch.save(args, os.path.join(output_dir, 'training_args.bin'))
                     logger.info("Saving model checkpoint to %s", output_dir)
@@ -415,24 +414,19 @@ def train(args, train_dataset, model):
 
     return global_step, tr_loss / global_step
 
-def evaluate(args, val_dataset, model, prefix=""):
-    # Loop to handle MNLI double evaluation (matched, mis-matched)
-    results = {}
-    if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
-        os.makedirs(args.output_dir)
-
+def evaluate(args, eval_dataset, model, prefix=0):
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
     # Note that DistributedSampler samples randomly
-    eval_sampler = SequentialSampler(val_dataset) if args.local_rank == -1 else DistributedSampler(val_dataset)
-    eval_dataloader = DataLoader(val_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+    eval_sampler = SequentialSampler(eval_dataset) if args.local_rank == -1 else DistributedSampler(eval_dataset)
+    eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
     # multi-gpu eval
-    # if args.n_gpu > 1:
-    #     model = torch.nn.DataParallel(model)
+    if args.n_gpu > 1:
+        model = torch.nn.DataParallel(model)
 
     # Eval!
     logger.info("***** Running evaluation {} *****".format(prefix))
-    logger.info("  Num examples = %d", len(val_dataset))
+    logger.info("  Num examples = %d", len(eval_dataset))
     logger.info("  Batch size = %d", args.eval_batch_size)
     eval_loss = 0.0
     nb_eval_steps = 0
@@ -461,18 +455,24 @@ def evaluate(args, val_dataset, model, prefix=""):
             out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
 
     eval_loss = eval_loss / nb_eval_steps
-    preds = np.argmax(preds, axis=1)
     preds = np.squeeze(preds)
-    result = acc_and_f1(preds, out_label_ids)
-    results.update(result)
+
+    pearson_corr = pearsonr(preds, out_label_ids)[0]
+    spearman_corr = spearmanr(preds, out_label_ids)[0]
+    results =  {
+        "eval_loss": eval_loss,
+        "pearson": pearson_corr,
+        "spearmanr": spearman_corr,
+        "corr": (pearson_corr + spearman_corr) / 2,
+    }
 
     output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
     with open(output_eval_file, "a") as writer:
         logger.info("***** Eval results {} *****".format(prefix))
         writer.write("***** Eval results {} *****".format(prefix))
-        for key in sorted(result.keys()):
-            logger.info("  %s = %s", key, str(result[key]))
-            writer.write("%s = %s\n" % (key, str(result[key])))
+        for key in sorted(results.keys()):
+            logger.info("  %s = %s", key, str(results[key]))
+            writer.write("%s = %s\n" % (key, str(results[key])))
         writer.write('\n')
 
     return results
