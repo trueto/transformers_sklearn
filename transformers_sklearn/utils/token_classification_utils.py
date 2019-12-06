@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from .data_utils import to_numpy
+from transformers_sklearn.utils.data_utils import to_numpy
 logger = logging.getLogger(__name__)
 
 class InputExample(object):

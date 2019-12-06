@@ -13,10 +13,10 @@ except:
     from tensorboardX import SummaryWriter
 
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
-                              TensorDataset,random_split)
+                              random_split)
 from torch.utils.data.distributed import DistributedSampler
 
-from .regression_utils import RegressionProcessor,load_and_cache_examples
+from transformers_sklearn.utils.regression_utils import RegressionProcessor,load_and_cache_examples
 
 from transformers import BertConfig,BertForSequenceClassification,BertTokenizer
 from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassification

@@ -4,7 +4,7 @@ import json
 import torch
 import logging
 import numpy as np
-from .data_utils import unpack_data
+from transformers_sklearn.utils.data_utils import unpack_data
 from torch.utils.data import TensorDataset
 
 logger = logging.getLogger(__name__)

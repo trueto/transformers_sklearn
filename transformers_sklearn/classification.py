@@ -10,7 +10,7 @@ try:
 except:
     from tensorboardX import SummaryWriter
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
-                              TensorDataset,random_split)
+                              random_split)
 from torch.utils.data.distributed import DistributedSampler
 
 from sklearn.base import BaseEstimator,ClassifierMixin
@@ -24,7 +24,7 @@ from transformers import DistilBertConfig,DistilBertForSequenceClassification,Di
 from transformers import  AlbertConfig,AlbertForSequenceClassification,AlbertTokenizer
 from transformers import AdamW, get_linear_schedule_with_warmup
 
-from .classification_utils import ClassificationProcessor,load_and_cache_examples,acc_and_f1
+from transformers_sklearn.utils.classification_utils import ClassificationProcessor,load_and_cache_examples,acc_and_f1
 
 logger = logging.getLogger(__name__)
 

@@ -8,9 +8,9 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import random_split,TensorDataset,\
     DistributedSampler,RandomSampler,SequentialSampler,DataLoader
 from tensorboardX import SummaryWriter
-from .token_classification_utils import get_labels,\
+from transformers_sklearn.utils.token_classification_utils import get_labels,\
     read_examples_from_X_y,convert_examples_to_features
-from .data_utils import to_numpy
+from transformers_sklearn.utils.data_utils import to_numpy
 from sklearn.base import BaseEstimator,ClassifierMixin
 from sklearn.metrics.classification import f1_score,recall_score,precision_score
 
@@ -21,7 +21,7 @@ from transformers import RobertaConfig, RobertaForTokenClassification, RobertaTo
 from transformers import DistilBertConfig, DistilBertForTokenClassification, DistilBertTokenizer
 from transformers import CamembertConfig, CamembertForTokenClassification, CamembertTokenizer
 from transformers import AlbertConfig,AlbertTokenizer
-from .model_utils import AlbertForTokenClassification
+from transformers_sklearn.model.modeling_albert import AlbertForTokenClassification
 
 ALL_MODELS = sum(
     (tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, RobertaConfig, DistilBertConfig,AlbertConfig)),

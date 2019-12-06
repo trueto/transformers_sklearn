@@ -3,7 +3,7 @@ import copy
 import json
 import logging
 import torch
-from .data_utils import unpack_data
+from transformers_sklearn.utils.data_utils import unpack_data
 from torch.utils.data import TensorDataset
 import numpy as np
 
