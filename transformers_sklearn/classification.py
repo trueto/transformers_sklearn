@@ -21,7 +21,7 @@ from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassi
 from transformers import XLMConfig,XLMForSequenceClassification,XLMTokenizer
 from transformers import XLNetConfig, XLNetTokenizer,XLNetForSequenceClassification
 from transformers import DistilBertConfig,DistilBertForSequenceClassification,DistilBertTokenizer
-from transformers import  AlbertConfig,AlbertForSequenceClassification,AlbertTokenizer
+from transformers_sklearn.model import AlbertForSequenceClassification
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 from transformers_sklearn.utils.classification_utils import ClassificationProcessor,load_and_cache_examples,acc_and_f1
