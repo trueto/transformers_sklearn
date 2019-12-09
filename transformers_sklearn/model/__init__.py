@@ -1,1 +1,2 @@
 from .modeling_albert import AlbertForTokenClassification
+from .modeling_summarization import BeamSearch
