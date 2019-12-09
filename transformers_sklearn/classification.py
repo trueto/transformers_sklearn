@@ -37,7 +37,7 @@ MODEL_CLASSES = {
     'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
     'distilbert': (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer),
-    'albert': (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer)
+    'albert': (BertConfig, AlbertForSequenceClassification, BertTokenizer)
 }
 
 def set_seed(seed=520,n_gpu=1):
