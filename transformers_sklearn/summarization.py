@@ -13,7 +13,7 @@ from sklearn.base import BaseEstimator
 from transformers import AutoTokenizer,BertForMaskedLM,\
     Model2Model,BertConfig,PreTrainedEncoderDecoder
 
-from .model import BeamSearch
+from .model_summarization import BeamSearch
 
 try:
     from torch.utils.tensorboard import SummaryWriter

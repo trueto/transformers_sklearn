@@ -136,12 +136,6 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         if not os.path.exists(self.output_dir):
             os.mkdir(self.output_dir)
 
-        if os.path.exists(self.output_dir) and os.listdir(
-                self.output_dir) and not self.overwrite_output_dir:
-            raise ValueError(
-                "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
-                    self.output_dir))
-
         # Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
             device = torch.device("cuda" if torch.cuda.is_available() and not self.no_cuda else "cpu")
@@ -164,6 +158,11 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         set_seed(seed=self.seed,n_gpu=self.n_gpu)
 
     def fit(self,X,y):
+        if os.path.exists(self.output_dir) and os.listdir(
+                self.output_dir) and not self.overwrite_output_dir:
+            raise ValueError(
+                "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
+                    self.output_dir))
         processor = ClassificationProcessor(X,y)
         label_list = processor.get_labels()
         num_labels = len(label_list)
@@ -228,22 +227,21 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         return self
 
     def predict_proba(self,X):
-        args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
         # Load a trained model and vocabulary that you have fine-tuned
-        _, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-        model = model_class.from_pretrained(args.output_dir)
-        tokenizer = tokenizer_class.from_pretrained(args.output_dir)
-        model.to(args.device)
+        _, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
+        model = model_class.from_pretrained(self.output_dir)
+        tokenizer = tokenizer_class.from_pretrained(self.output_dir)
+        model.to(self.device)
 
         # prepare data
         processor = ClassificationProcessor(X)
-        test_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-        test_dataset = load_and_cache_examples(args,tokenizer,processor,[None],evaluate=True)
-        test_sampler = SequentialSampler(test_dataset) if args.local_rank == -1 else DistributedSampler(test_dataset)
+        test_batch_size = self.per_gpu_eval_batch_size * max(1, self.n_gpu)
+        test_dataset = load_and_cache_examples(self,tokenizer,processor,[None],evaluate=True)
+        test_sampler = SequentialSampler(test_dataset) if self.local_rank == -1 else DistributedSampler(test_dataset)
         test_dataloader = DataLoader(test_dataset,sampler=test_sampler, batch_size=test_batch_size)
 
         # multi-gpu eval
-        if args.n_gpu > 1:
+        if self.n_gpu > 1:
             model = torch.nn.DataParallel(model)
         # Predict
         logger.info("***** Running predict*****")
@@ -254,7 +252,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
 
         for batch in tqdm(test_dataloader,desc='Predicting'):
             model.eval()
-            batch = tuple(t.to(args.device) for t in batch)
+            batch = tuple(t.to(self.device) for t in batch)
 
             with torch.no_grad():
                 inputs = {
@@ -262,9 +260,9 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                     'attention_mask': batch[1],
                     'labels': batch[3]
                 }
-                if args.model_type != 'distilbert':
+                if self.model_type != 'distilbert':
                     # XLM, DistilBERT and RoBERTa don't use segment_ids
-                    inputs['token_type_ids'] = batch[2] if args.model_type in ['bert','xlnet'] else None
+                    inputs['token_type_ids'] = batch[2] if self.model_type in ['bert','xlnet'] else None
                 outputs = model(**inputs)
                 _, logits = outputs[:2]
             prob = F.softmax(logits, dim=-1)

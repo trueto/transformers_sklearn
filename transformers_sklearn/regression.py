@@ -23,7 +23,7 @@ from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassi
 from transformers import XLMConfig,XLMForSequenceClassification,XLMTokenizer
 from transformers import XLNetConfig, XLNetTokenizer,XLNetForSequenceClassification
 from transformers import DistilBertConfig,DistilBertForSequenceClassification,DistilBertTokenizer
-from transformers import  AlbertConfig,AlbertForSequenceClassification,AlbertTokenizer
+from transformers_sklearn.model_albert import AlbertConfig,AlbertForSequenceClassification,AlbertTokenizer
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 logger = logging.getLogger(__name__)
@@ -216,44 +216,46 @@ class BERTologyRegressor(BaseEstimator,RegressorMixin):
             # Good practice: save your training arguments together with the trained model
             torch.save(self, os.path.join(self.output_dir, 'training_args.bin'))
 
+        return self
+
     def predict(self,X):
-        args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
-        config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+        # args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
+        config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
         # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(args.output_dir)
-        tokenizer = tokenizer_class.from_pretrained(args.output_dir)
-        model.to(args.device)
+        model = model_class.from_pretrained(self.output_dir)
+        tokenizer = tokenizer_class.from_pretrained(self.output_dir)
+        model.to(self.device)
 
         processor = RegressionProcessor(X,y=None)
-        test_dataset = load_and_cache_examples(args,tokenizer,processor,mode='test')
+        test_dataset = load_and_cache_examples(self,tokenizer,processor,mode='test')
 
-        args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+        self.eval_batch_size = self.per_gpu_eval_batch_size * max(1, self.n_gpu)
         # Note that DistributedSampler samples randomly
-        eval_sampler = SequentialSampler(test_dataset) if args.local_rank == -1 else DistributedSampler(test_dataset)
-        eval_dataloader = DataLoader(test_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+        eval_sampler = SequentialSampler(test_dataset) if self.local_rank == -1 else DistributedSampler(test_dataset)
+        eval_dataloader = DataLoader(test_dataset, sampler=eval_sampler, batch_size=self.eval_batch_size)
 
         # multi-gpu eval
-        if args.n_gpu > 1:
+        if self.n_gpu > 1:
             model = torch.nn.DataParallel(model)
 
         # Eval!
         logger.info("***** Running Predict*****")
         logger.info("  Num examples = %d", len(test_dataset))
-        logger.info("  Batch size = %d", args.eval_batch_size)
+        logger.info("  Batch size = %d", self.eval_batch_size)
         eval_loss = 0.0
         nb_eval_steps = 0
         preds = None
         out_label_ids = None
         for batch in tqdm(eval_dataloader, desc="Predicting"):
             model.eval()
-            batch = tuple(t.to(args.device) for t in batch)
+            batch = tuple(t.to(self.device) for t in batch)
 
             with torch.no_grad():
                 inputs = {'input_ids': batch[0],
                           'attention_mask': batch[1],
                           'labels': batch[3]}
-                if args.model_type != 'distilbert':
-                    inputs['token_type_ids'] = batch[2] if args.model_type in ['bert',
+                if self.model_type != 'distilbert':
+                    inputs['token_type_ids'] = batch[2] if self.model_type in ['bert',
                                                                                'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]

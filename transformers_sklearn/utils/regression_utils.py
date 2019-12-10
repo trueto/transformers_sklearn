@@ -18,7 +18,7 @@ def load_and_cache_examples(args, tokenizer, processor,mode="train"):
         mode,
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length)))
-    if os.path.exists(cached_features_file) and not args.overwrite_cache:
+    if os.path.exists(cached_features_file) and not args.overwrite_cache and mode=='train':
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
     else:
@@ -33,7 +33,7 @@ def load_and_cache_examples(args, tokenizer, processor,mode="train"):
                                                 pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
                                                 pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
                                                 )
-        if args.local_rank in [-1, 0]:
+        if args.local_rank in [-1, 0] and mode=='train':
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save(features, cached_features_file)
 

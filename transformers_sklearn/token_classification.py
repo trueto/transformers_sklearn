@@ -178,25 +178,24 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
         return self
 
     def predict(self,X):
-        args = torch.load(os.path.join(self.output_dir, "training_args.bin"))
-
+        # args = torch.load(os.path.join(self.output_dir, "training_args.bin"))
         # Load a trained model and vocabulary that you have fine-tuned
-        _, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-        model = model_class.from_pretrained(args.output_dir)
-        tokenizer = tokenizer_class.from_pretrained(args.output_dir)
+        _, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
+        model = model_class.from_pretrained(self.output_dir)
+        tokenizer = tokenizer_class.from_pretrained(self.output_dir)
 
-        model.to(args.device)
+        model.to(self.device)
 
         # get dataset
-        test_dataset = load_and_cache_examples(args,tokenizer,args.labels,
-                                               args.pad_token_label_id,X,y=None,mode='test')
+        test_dataset = load_and_cache_examples(self,tokenizer,self.labels,
+                                               self.pad_token_label_id,X,y=None,mode='test')
 
-        test_bacth_size = args.per_gpu_eval_batch_size * max(1,args.n_gpu)
-        eval_sampler = SequentialSampler(test_dataset) if args.local_rank == -1 else DistributedSampler(test_dataset)
+        test_bacth_size = self.per_gpu_eval_batch_size * max(1,self.n_gpu)
+        eval_sampler = SequentialSampler(test_dataset) if self.local_rank == -1 else DistributedSampler(test_dataset)
         eval_dataloader = DataLoader(test_dataset, sampler=eval_sampler, batch_size=test_bacth_size)
 
         # multi-gpu evaluate
-        if args.n_gpu > 1:
+        if self.n_gpu > 1:
             model = torch.nn.DataParallel(model)
 
         # Predict!
@@ -209,19 +208,19 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
         out_label_ids = None
 
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
-            batch = tuple(t.to(args.device) for t in batch)
+            batch = tuple(t.to(self.device) for t in batch)
 
             with torch.no_grad():
                 inputs = {"input_ids": batch[0],
                           "attention_mask": batch[1],
                           "labels": batch[3]}
-                if args.model_type != "distilbert":
-                    inputs["token_type_ids"] = batch[2] if args.model_type in ["bert",
+                if self.model_type != "distilbert":
+                    inputs["token_type_ids"] = batch[2] if self.model_type in ["bert",
                                                                                "xlnet"] else None  # XLM and RoBERTa don"t use segment_ids
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
 
-                if args.n_gpu > 1:
+                if self.n_gpu > 1:
                     tmp_eval_loss = tmp_eval_loss.mean()  # mean() to average on multi-gpu parallel evaluating
 
             if preds is None:
@@ -235,8 +234,8 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
         preds_list = [[] for _ in range(out_label_ids.shape[0])]
         for i in range(out_label_ids.shape[0]):
             for j in range(out_label_ids.shape[1]):
-                if out_label_ids[i, j] != args.pad_token_label_id:
-                    preds_list[i].append(args.id2label[preds[i][j]])
+                if out_label_ids[i, j] != self.pad_token_label_id:
+                    preds_list[i].append(self.id2label[preds[i][j]])
         return preds_list
 
     def score(self, X, y, sample_weight=None):
@@ -255,9 +254,9 @@ def load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, X,y,mod
 
     # Load data features from cache or dataset file
     cached_features_file = os.path.join(args.data_dir, "cached_{}_{}_{}".format(mode,
-        list(filter(None, args.model_name_or_path.split("/"))).pop(),
+        args.model_type,
         str(args.max_seq_length)))
-    if os.path.exists(cached_features_file) and not args.overwrite_cache:
+    if os.path.exists(cached_features_file) and not args.overwrite_cache and mode=='train':
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
     else:
@@ -277,11 +276,11 @@ def load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, X,y,mod
                                                 pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
                                                 pad_token_label_id=pad_token_label_id
                                                 )
-        if args.local_rank in [-1, 0]:
+        if args.local_rank in [-1, 0] and mode == 'train':
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save(features, cached_features_file)
 
-    if args.local_rank == 0 and mode=='train':
+    if args.local_rank == 0 and mode =='train':
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     # Convert to Tensors and build dataset
