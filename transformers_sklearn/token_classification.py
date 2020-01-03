@@ -101,7 +101,7 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
         # Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
             device = torch.device("cuda" if torch.cuda.is_available() and not self.no_cuda else "cpu")
-            self.n_gpu = torch.cuda.device_count()
+            self.n_gpu = torch.cuda.device_count() if not self.no_cuda else 1
         else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
             torch.cuda.set_device(self.local_rank)
             device = torch.device("cuda", self.local_rank)
