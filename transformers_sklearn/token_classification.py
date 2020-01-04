@@ -173,8 +173,7 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
             logger.info("Saving model checkpoint to %s", self.output_dir)
             # Save a trained model, configuration and tokenizer using `save_pretrained()`.
             # They can then be reloaded using `from_pretrained()`
-            model_to_save = model.module if hasattr(model,
-                                                    "module") else model  # Take care of distributed/parallel training
+            model_to_save = model.module if hasattr(model,"module") else model  # Take care of distributed/parallel training
             model_to_save.save_pretrained(self.output_dir)
             tokenizer.save_pretrained(self.output_dir)
 
@@ -211,13 +210,12 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
         logger.info("  Num examples = %d", len(test_dataset))
         logger.info("  Batch size = %d", test_bacth_size)
 
-        model.eval()
         preds = None
         out_label_ids = None
 
-        for batch in tqdm(eval_dataloader, desc="Evaluating"):
+        for batch in tqdm(eval_dataloader, desc="Predicting"):
             batch = tuple(t.to(self.device) for t in batch)
-
+            model.eval()
             with torch.no_grad():
                 inputs = {"input_ids": batch[0],
                           "attention_mask": batch[1],
@@ -388,8 +386,8 @@ def train(args, train_dataset, model, tokenizer, labels, pad_token_label_id):
                 else:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
-                scheduler.step()  # Update learning rate schedule
                 optimizer.step()
+                scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
 
