@@ -21,7 +21,10 @@ if __name__ == '__main__':
         data_dir='ts_data/sts-b',
         output_dir='results/sts-b',
         num_train_epochs=3,
-        learning_rate=5e-5
+        learning_rate=5e-5,
+        logging_steps=100,
+        save_steps=100,
+        overwrite_output_dir=True
     )
     #
     ## 3. fit
@@ -30,7 +33,7 @@ if __name__ == '__main__':
     ## 4. score
     report = cls.score(X_dev,y_dev)
     with open('sts-b.txt','w',encoding='utf8') as f:
-        f.write(report)
+        f.write(str(report))
 
     ## 5. predict
     y_pred = cls.predict(X_test)

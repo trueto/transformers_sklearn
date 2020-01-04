@@ -106,7 +106,10 @@ def convert_examples_to_features(examples, tokenizer,
         assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(len(attention_mask), max_length)
         assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(len(token_type_ids), max_length)
 
-        label = float(example.label)
+        if example.label:
+            label = float(example.label)
+        else:
+            label = 0.0
 
         if ex_index < 5:
             logger.info("*** Example ***")
@@ -114,7 +117,8 @@ def convert_examples_to_features(examples, tokenizer,
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
             logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
-            logger.info("label: %s (id = %d)" % (example.label, label))
+            if label:
+                logger.info("label: %s (id = %d)" % (example.label, label))
 
         features.append(
                 InputFeatures(input_ids=input_ids,
