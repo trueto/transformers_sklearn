@@ -12,7 +12,7 @@ from transformers_sklearn.utils.token_classification_utils import get_labels,\
     read_examples_from_X_y,convert_examples_to_features
 from transformers_sklearn.utils.data_utils import to_numpy
 from sklearn.base import BaseEstimator,ClassifierMixin
-from sklearn.metrics.classification import f1_score,recall_score,precision_score
+from transformers_sklearn.utils.metrics_utils import f1_score,recall_score,precision_score,classification_report
 
 
 from transformers import AdamW, get_linear_schedule_with_warmup
@@ -46,7 +46,7 @@ def set_seed(seed=520,n_gpu=1):
 
 class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
 
-    def __init__(self,data_dir='ts_data',model_type='bert',
+    def __init__(self,labels,data_dir='ts_data',model_type='bert',
                  model_name_or_path='bert-base-chinese',
                  output_dir='ts_results',config_name='',
                  tokenizer_name='',cache_dir='model_cache',
@@ -62,6 +62,7 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
                  overwrite_cache=False,seed=520,
                  fp16=False,fp16_opt_level='01',
                  local_rank=-1,val_fraction=0.1):
+        self.labels = labels
         self.data_dir = data_dir
         self.model_type = model_type
         self.model_name_or_path = model_name_or_path
@@ -93,11 +94,6 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
         self.local_rank = local_rank
         self.val_fraction = val_fraction
 
-        if os.path.exists(self.output_dir) and os.listdir(self.output_dir) and not self.overwrite_output_dir:
-            raise ValueError(
-                "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
-                    self.output_dir))
-
         # Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
             device = torch.device("cuda" if torch.cuda.is_available() and not self.no_cuda else "cpu")
@@ -121,10 +117,20 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
 
 
     def fit(self,X,y):
-        labels = get_labels(y)
-        num_labels = len(labels)
-        self.labels = labels
-        self.id2label = {i: label for i,label in enumerate(labels)}
+        if not os.path.exists(self.data_dir):
+            os.mkdir(self.data_dir)
+
+        if not os.path.exists(self.output_dir):
+            os.mkdir(self.output_dir)
+
+        if os.path.exists(self.output_dir) and os.listdir(
+                self.output_dir) and not self.overwrite_output_dir:
+            raise ValueError(
+                "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
+                    self.output_dir))
+
+        num_labels = len(self.labels)
+        # self.labels = labels
         # Use cross entropy ignore index as padding label id so that only real label ids contribute to the loss later
         pad_token_label_id = CrossEntropyLoss().ignore_index
         self.pad_token_label_id = pad_token_label_id
@@ -154,8 +160,8 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
 
         logger.info("Training/evaluation parameters %s", self)
 
-        train_dataset = load_and_cache_examples(self, tokenizer, labels, pad_token_label_id, X,y, mode="train")
-        global_step, tr_loss = train(self, train_dataset, model, tokenizer, labels, pad_token_label_id)
+        train_dataset = load_and_cache_examples(self, tokenizer, self.labels, pad_token_label_id, X,y, mode="train")
+        global_step, tr_loss = train(self, train_dataset, model, tokenizer, self.labels, pad_token_label_id)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
         # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
@@ -180,15 +186,17 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
     def predict(self,X):
         # args = torch.load(os.path.join(self.output_dir, "training_args.bin"))
         # Load a trained model and vocabulary that you have fine-tuned
+        self.id2label = {i: label for i, label in enumerate(self.labels)}
         _, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
         model = model_class.from_pretrained(self.output_dir)
         tokenizer = tokenizer_class.from_pretrained(self.output_dir)
 
         model.to(self.device)
 
+        pad_token_label_id = CrossEntropyLoss().ignore_index
         # get dataset
         test_dataset = load_and_cache_examples(self,tokenizer,self.labels,
-                                               self.pad_token_label_id,X,y=None,mode='test')
+                                               pad_token_label_id,X,y=None,mode='test')
 
         test_bacth_size = self.per_gpu_eval_batch_size * max(1,self.n_gpu)
         eval_sampler = SequentialSampler(test_dataset) if self.local_rank == -1 else DistributedSampler(test_dataset)
@@ -234,19 +242,14 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
         preds_list = [[] for _ in range(out_label_ids.shape[0])]
         for i in range(out_label_ids.shape[0]):
             for j in range(out_label_ids.shape[1]):
-                if out_label_ids[i, j] != self.pad_token_label_id:
+                if out_label_ids[i, j] != pad_token_label_id:
                     preds_list[i].append(self.id2label[preds[i][j]])
         return preds_list
 
     def score(self, X, y, sample_weight=None):
-        preds_list = to_numpy(self.predict(X))
-        labels = to_numpy(y)
-        results = {
-            "precision": precision_score(labels, preds_list),
-            "recall": recall_score(labels, preds_list),
-            "f1": f1_score(labels, preds_list)
-        }
-        return results
+        y_pred = self.predict(X)
+        return classification_report(y,y_pred,digits=4)
+
 
 def load_and_cache_examples(args, tokenizer, labels, pad_token_label_id, X,y,mode):
     if args.local_rank not in [-1, 0] and mode=='train':
@@ -393,7 +396,7 @@ def train(args, train_dataset, model, tokenizer, labels, pad_token_label_id):
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
                     if args.local_rank == -1 and args.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
-                        results, _ = evaluate(args, val_ds, model,labels, pad_token_label_id,prefix=global_step)
+                        results = evaluate(args, val_ds, model,labels, pad_token_label_id,prefix=global_step)
                         for key, value in results.items():
                             tb_writer.add_scalar("eval_{}".format(key), value, global_step)
                     tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
@@ -491,11 +494,12 @@ def evaluate(args, eval_dataset, model, labels, pad_token_label_id, prefix=0):
 
     output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
     with open(output_eval_file, "a") as writer:
-        logger.info("***** Eval results %d *****", prefix)
-        writer.write("***** Eval results %d *****", prefix)
+        logger.info("***** Eval results %d *****",prefix)
+        writer.write("***** Eval results {} *****".format(prefix))
         for key in sorted(results.keys()):
-            logger.info("  %s = %s", key, str(results[key]))
-            writer.write("%s = %s\n" % (key, str(results[key])))
+            msg = "{} = {}".format(key, str(results[key]))
+            logger.info(msg)
+            writer.write(msg)
         writer.write('\n')
 
     return results

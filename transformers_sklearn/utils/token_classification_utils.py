@@ -39,7 +39,7 @@ def read_examples_from_X_y(X,y, mode):
     for i, (words, labels) in enumerate(zip(words_list, labels_list)):
         examples.append(InputExample(guid='{}-{}'.format(mode, i),
                                      words=words,
-                                     labels=labels))
+                                     labels=labels if y else ['O']*len(words)))
 
     return examples
 
@@ -64,7 +64,6 @@ def convert_examples_to_features(examples,
             - True (XLNet/GPT pattern): A + [SEP] + B + [SEP] + [CLS]
         `cls_token_segment_id` define the segment id associated to the CLS token (0 for BERT, 2 for XLNet)
     """
-
     label_map = {label: i for i, label in enumerate(label_list)}
 
     features = []
