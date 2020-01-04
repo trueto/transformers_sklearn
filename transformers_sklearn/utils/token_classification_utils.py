@@ -41,7 +41,6 @@ def read_examples_from_X_y(X,y, mode):
                                      words=words,
                                      labels=labels))
 
-
     return examples
 
 def convert_examples_to_features(examples,

@@ -176,7 +176,6 @@ class BERTologyRegressor(BaseEstimator,RegressorMixin):
         config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
         config = config_class.from_pretrained(self.config_name if self.config_name else self.model_name_or_path,
                                               num_labels=num_labels,
-                                              finetuning_task=self.task_name,
                                               cache_dir=self.cache_dir if self.cache_dir else None)
         tokenizer = tokenizer_class.from_pretrained(
             self.tokenizer_name if self.tokenizer_name else self.model_name_or_path,

@@ -23,7 +23,11 @@ if __name__ == '__main__':
         data_dir='ts_data/lcqmc',
         output_dir='results/lcqmc',
         num_train_epochs=3,
-        learning_rate=5e-5
+        learning_rate=5e-5,
+        gradient_accumulation_steps=4,
+        warmup_steps=1000,
+        logging_steps=500,
+        save_steps=500
     )
     #
     ## 3. fit
