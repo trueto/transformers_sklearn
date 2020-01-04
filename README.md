@@ -148,15 +148,10 @@ def get_X_y(file_path):
                 tokens = sequence.split('/')[0]
                 tag = sequence.split('/')[-1]
                 tlen = len(tokens)
-                if tlen == 1:
-                    words.append(tokens)
-                    labels.append(tag_dict[tag])
+                if tag == 'o':
+                    labels = labels + ['O'] * tlen
                 else:
-                    words = words + list(tokens)
-                    if tag == 'o':
-                        labels = labels + ['O']*tlen
-                    else:
-                        labels = labels + ['B-'+tag_dict[tag]] + (tlen-1)*['I-'+tag_dict[tag]]
+                    labels = labels + ['B-' + tag_dict[tag]] + (tlen - 1) * ['I-' + tag_dict[tag]]
             assert len(words) == len(labels)
             words_list.append(words)
             labels_list.append(labels)
