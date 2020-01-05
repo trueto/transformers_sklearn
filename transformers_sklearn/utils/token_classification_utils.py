@@ -44,7 +44,7 @@ def read_examples_from_X_y(X,y, mode):
     return examples
 
 def convert_examples_to_features(examples,
-                                 label_list,
+                                 label_map,
                                  max_seq_length,
                                  tokenizer,
                                  cls_token_at_end=False,
@@ -55,7 +55,7 @@ def convert_examples_to_features(examples,
                                  pad_on_left=False,
                                  pad_token=0,
                                  pad_token_segment_id=0,
-                                 pad_token_label_id=-1,
+                                 pad_token_label_id=-100,
                                  sequence_a_segment_id=0,
                                  mask_padding_with_zero=True):
     """ Loads a data file into a list of `InputBatch`s
@@ -64,7 +64,7 @@ def convert_examples_to_features(examples,
             - True (XLNet/GPT pattern): A + [SEP] + B + [SEP] + [CLS]
         `cls_token_segment_id` define the segment id associated to the CLS token (0 for BERT, 2 for XLNet)
     """
-    label_map = {label: i for i, label in enumerate(label_list)}
+    # label_map = {label: i for i, label in enumerate(label_list)}
 
     features = []
     for (ex_index, example) in enumerate(examples):
@@ -142,7 +142,9 @@ def convert_examples_to_features(examples,
         assert len(input_ids) == max_seq_length
         assert len(input_mask) == max_seq_length
         assert len(segment_ids) == max_seq_length
-        assert len(label_ids) == max_seq_length
+        # assert len(label_ids) == max_seq_length
+        if len(label_ids) != max_seq_length:
+            continue
 
         if ex_index < 5:
             logger.info("*** Example ***")

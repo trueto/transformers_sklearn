@@ -4,12 +4,12 @@ from transformers_sklearn import BERTologyNERClassifer
 
 if __name__ == '__main__':
 
-    data_df = pd.read_csv('datasets/gmbner/ner_dataset.csv')
+    data_df = pd.read_csv('datasets/gmbner/ner_dataset.csv',encoding="utf8")
     data_df.fillna(method="ffill",inplace=True)
     value_counts = data_df['Tag'].value_counts()
-    labels = list(value_counts.to_dict().keys())
+    label_list = list(value_counts.to_dict().keys())
 
-    ## 1. preparing data
+    # ## 1. preparing data
     X = []
     y = []
     for label, batch_df in data_df.groupby(by='Sentence #',sort=False):
@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     ## 2. customize model
     ner = BERTologyNERClassifer(
-        labels=labels,
+        labels=label_list,
         model_type='bert',
         model_name_or_path='bert-base-cased',
         data_dir='ts_data/gmbner',
@@ -34,11 +34,11 @@ if __name__ == '__main__':
         save_steps=50,
         overwrite_output_dir=True
     )
-
-    # # # ## 3. fit
+    #
+   ## 3. fit
     ner.fit(X_train, y_train)
-    # #
-    # # # ## 4. score
+    # # # #
+    ## 4. score
     report = ner.score(X_test, y_test)
     with open('gmbner.txt', 'w', encoding='utf8') as f:
         f.write(report)
