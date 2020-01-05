@@ -31,7 +31,7 @@ pip install .
 
 ### Classification tasks
 #### English
-Fine-tuning and scoring BERT model on MRPC corpus
+Fine-tuning and scoring BERT model on [MRPC](https://github.com/binhaowang/glue_data) corpus
 The whole code is as following:
 ```python
 import pandas as pd
@@ -69,10 +69,33 @@ if __name__ == '__main__':
 Running code above, the following result will be returned:
 
 ```
+***** Eval results 50 *****acc = 0.7360406091370558
+acc_and_f1 = 0.7810637828293975
+f1 = 0.8260869565217391
+
+***** Eval results 100 *****acc = 0.6802030456852792
+acc_and_f1 = 0.707748581666169
+f1 = 0.7352941176470589
+
+***** Eval results 150 *****acc = 0.8121827411167513
+acc_and_f1 = 0.8418552594472646
+f1 = 0.8715277777777778
+
+***** Eval results 200 *****acc = 0.817258883248731
+acc_and_f1 = 0.8452491599342247
+f1 = 0.8732394366197184
+
+***** Eval results 250 *****acc = 0.8096446700507615
+acc_and_f1 = 0.8367642588003353
+f1 = 0.8638838475499092
+
+***** Eval results 300 *****acc = 0.8121827411167513
+acc_and_f1 = 0.840488533678943
+f1 = 0.8687943262411348
 
 ```
 #### Chinese
-Fine-tuning and scoring BERT model on LCQMC corpus
+Fine-tuning and scoring BERT model on [LCQMC](http://106.13.187.75:8003/dataSet) corpus
 The whole code is as following:
 ```python
 import pandas as pd
@@ -119,13 +142,69 @@ if __name__ == '__main__':
 ```
 Running code above, the following result will be returned:
 ```
+ precision    recall  f1-score   support
 
+           0     0.8919    0.8777    0.8848      4400
+           1     0.8797    0.8937    0.8866      4402
+
+    accuracy                         0.8857      8802
+   macro avg     0.8858    0.8857    0.8857      8802
+weighted avg     0.8858    0.8857    0.8857      8802
 ```
 
 ### NER tasks
 #### English
+Fine-tuning and scoring BERT model on [GMBNER]() corpus
+The whole code is as following:
+```python
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from transformers_sklearn import BERTologyNERClassifer
 
+if __name__ == '__main__':
+
+    data_df = pd.read_csv('datasets/gmbner/ner_dataset.csv',encoding="utf8")
+    data_df.fillna(method="ffill",inplace=True)
+    value_counts = data_df['Tag'].value_counts()
+    label_list = list(value_counts.to_dict().keys())
+
+    # ## 1. preparing data
+    X = []
+    y = []
+    for label, batch_df in data_df.groupby(by='Sentence #',sort=False):
+        words = batch_df['Word'].tolist()
+        labels = batch_df['Tag'].tolist()
+        assert len(words) == len(labels)
+        X.append(words)
+        y.append(labels)
+
+    X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.1,random_state=520)
+
+    ## 2. customize model
+    ner = BERTologyNERClassifer(
+        labels=label_list,
+        model_type='bert',
+        model_name_or_path='bert-base-cased',
+        data_dir='ts_data/gmbner',
+        output_dir='results/gmbner',
+        num_train_epochs=3,
+        learning_rate=5e-5,
+        logging_steps=50,
+        save_steps=50,
+        overwrite_output_dir=True
+    )
+    #
+   ## 3. fit
+    ner.fit(X_train, y_train)
+    # # # #
+    ## 4. score
+    report = ner.score(X_test, y_test)
+    with open('gmbner.txt', 'w', encoding='utf8') as f:
+        f.write(report)
+```
 #### Chinese
+Fine-tuning and scoring BERT model on [MSRANER](http://106.13.187.75:8003/dataSet) corpus
+The whole code is as following:
 ```python
 import pandas as pd
 from transformers_sklearn import BERTologyNERClassifer
@@ -184,7 +263,7 @@ if __name__ == '__main__':
 ```
 
 ### Regression task
-Fine-tuning and scoring BERT model on MRPC corpus
+Fine-tuning and scoring BERT model on [STS-B](https://github.com/binhaowang/glue_data) corpus
 The whole code is as following:
 ```python
 import pandas as pd
