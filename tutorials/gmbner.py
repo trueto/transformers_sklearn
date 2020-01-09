@@ -2,6 +2,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from transformers_sklearn import BERTologyNERClassifer
 
+
 if __name__ == '__main__':
 
     data_df = pd.read_csv('datasets/gmbner/ner_dataset.csv',encoding="utf8")
@@ -26,6 +27,8 @@ if __name__ == '__main__':
         labels=label_list,
         model_type='bert',
         model_name_or_path='bert-base-cased',
+        tokenizer_name='bert-base-multilingual-cased',
+        config_name='bert-base-multilingual-cased-config.json',
         data_dir='ts_data/gmbner',
         output_dir='results/gmbner',
         num_train_epochs=3,
