@@ -121,10 +121,10 @@ class BERTologyNERClassifer(BaseEstimator,ClassifierMixin):
 
     def fit(self,X,y):
         if not os.path.exists(self.data_dir):
-            os.mkdir(self.data_dir)
+            os.makedirs(self.data_dir)
 
         if not os.path.exists(self.output_dir):
-            os.mkdir(self.output_dir)
+            os.makedirs(self.output_dir)
 
         if os.path.exists(self.output_dir) and os.listdir(
                 self.output_dir) and not self.overwrite_output_dir:

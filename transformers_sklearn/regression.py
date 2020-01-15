@@ -130,18 +130,6 @@ class BERTologyRegressor(BaseEstimator,RegressorMixin):
         self.val_fraction = val_fraction
         self.data_dir = data_dir
 
-        if not os.path.exists(self.data_dir):
-            os.mkdir(self.data_dir)
-
-        if not os.path.exists(self.output_dir):
-            os.mkdir(self.output_dir)
-
-        if os.path.exists(self.output_dir) and os.listdir(
-                self.output_dir) and not self.overwrite_output_dir:
-            raise ValueError(
-                "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
-                    self.output_dir))
-
         # Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
             device = torch.device("cuda" if torch.cuda.is_available() and not self.no_cuda else "cpu")
@@ -164,6 +152,18 @@ class BERTologyRegressor(BaseEstimator,RegressorMixin):
         set_seed(seed=self.seed, n_gpu=self.n_gpu)
 
     def fit(self,X,y):
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
+
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+
+        if os.path.exists(self.output_dir) and os.listdir(
+                self.output_dir) and not self.overwrite_output_dir:
+            raise ValueError(
+                "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
+                    self.output_dir))
+
         processor = RegressionProcessor(X,y)
         label_list = processor.get_labels()
         num_labels = len(label_list)
