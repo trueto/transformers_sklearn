@@ -23,7 +23,8 @@ from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassi
 from transformers import XLMConfig,XLMForSequenceClassification,XLMTokenizer
 from transformers import XLNetConfig, XLNetTokenizer,XLNetForSequenceClassification
 from transformers import DistilBertConfig,DistilBertForSequenceClassification,DistilBertTokenizer
-from transformers_sklearn.model_albert import AlbertConfig,AlbertForSequenceClassification,AlbertTokenizer
+from transformers_sklearn.model_albert_fix import AlbertConfig,\
+    AlbertForSequenceClassification,AlbertTokenizer,BrightAlbertForSequenceClassification
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,8 @@ MODEL_CLASSES = {
     'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
     'distilbert': (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer),
-    'albert': (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer)
+    'albert': (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer),
+    'bright_albert': (AlbertConfig,BrightAlbertForSequenceClassification,AlbertTokenizer)
 }
 
 def set_seed(seed=520,n_gpu=1):

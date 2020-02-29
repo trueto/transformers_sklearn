@@ -21,7 +21,8 @@ from transformers import RobertaConfig, RobertaForTokenClassification, RobertaTo
 from transformers import DistilBertConfig, DistilBertForTokenClassification, DistilBertTokenizer
 from transformers import CamembertConfig, CamembertForTokenClassification, CamembertTokenizer
 # from transformers import AlbertConfig,AlbertTokenizer
-from transformers_sklearn.model_albert import AlbertForTokenClassification,AlbertTokenizer,AlbertConfig
+from transformers_sklearn.model_albert_fix import AlbertForTokenClassification,\
+    AlbertTokenizer,AlbertConfig,BrightAlbertForTokenClassification
 
 ALL_MODELS = sum(
     (tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, RobertaConfig, DistilBertConfig)),
@@ -32,7 +33,8 @@ MODEL_CLASSES = {
     "roberta": (RobertaConfig, RobertaForTokenClassification, RobertaTokenizer),
     "distilbert": (DistilBertConfig, DistilBertForTokenClassification, DistilBertTokenizer),
     "camembert": (CamembertConfig, CamembertForTokenClassification, CamembertTokenizer),
-    "albert":(AlbertConfig,AlbertForTokenClassification,AlbertTokenizer)
+    "albert":(AlbertConfig,AlbertForTokenClassification,AlbertTokenizer),
+    "bright_albert": (AlbertConfig,BrightAlbertForTokenClassification,AlbertTokenizer)
 }
 
 logger = logging.getLogger(__name__)

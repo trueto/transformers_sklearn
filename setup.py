@@ -17,7 +17,9 @@ setup(
                       'pandas',
                       'boto3',
                       'requests',
-                      'tqdm'],
+                      'tqdm',
+                      'tensorboardx'
+                      ],
     python_requires='>=3.5.0',
     classifiers=[
           'Intended Audience :: Science/Research',

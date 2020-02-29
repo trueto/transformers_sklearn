@@ -21,7 +21,9 @@ from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassi
 from transformers import XLMConfig,XLMForSequenceClassification,XLMTokenizer
 from transformers import XLNetConfig, XLNetTokenizer,XLNetForSequenceClassification
 from transformers import DistilBertConfig,DistilBertForSequenceClassification,DistilBertTokenizer
-from transformers_sklearn.model_albert import AlbertForSequenceClassification,AlbertConfig,AlbertTokenizer
+# from transformers_sklearn.model_albert import AlbertForSequenceClassification,AlbertConfig,AlbertTokenizer
+from transformers_sklearn.model_albert_fix import AlbertConfig,AlbertTokenizer,\
+    AlbertForSequenceClassification,BrightAlbertForSequenceClassification
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 from transformers_sklearn.utils.classification_utils import ClassificationProcessor,load_and_cache_examples,acc_and_f1
@@ -37,7 +39,8 @@ MODEL_CLASSES = {
     'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
     'distilbert': (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer),
-    'albert': (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer)
+    'albert': (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer),
+    'bright_albert': (AlbertConfig,BrightAlbertForSequenceClassification,AlbertTokenizer)
 }
 
 def set_seed(seed=520,n_gpu=1):
@@ -181,7 +184,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         config = config_class.from_pretrained(self.config_name if self.config_name else self.model_name_or_path,
                                               num_labels=num_labels,
                                               cache_dir=self.cache_dir if self.cache_dir else None,
-                                              share_type='all' if self.model_type=='albert' else None
+                                              share_type='all' if 'albert' in self.model_type else None
                                               )
         tokenizer = tokenizer_class.from_pretrained(
             self.tokenizer_name if self.tokenizer_name else self.model_name_or_path,
