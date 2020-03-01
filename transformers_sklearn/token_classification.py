@@ -20,6 +20,8 @@ from transformers import BertConfig, BertForTokenClassification, BertTokenizer
 from transformers import RobertaConfig, RobertaForTokenClassification, RobertaTokenizer
 from transformers import DistilBertConfig, DistilBertForTokenClassification, DistilBertTokenizer
 from transformers import CamembertConfig, CamembertForTokenClassification, CamembertTokenizer
+from transformers import XLMRobertaConfig,XLMRobertaForTokenClassification,XLMRobertaTokenizer
+
 # from transformers import AlbertConfig,AlbertTokenizer
 from transformers_sklearn.model_albert_fix import AlbertForTokenClassification,\
     AlbertTokenizer,AlbertConfig,BrightAlbertForTokenClassification
@@ -34,7 +36,8 @@ MODEL_CLASSES = {
     "distilbert": (DistilBertConfig, DistilBertForTokenClassification, DistilBertTokenizer),
     "camembert": (CamembertConfig, CamembertForTokenClassification, CamembertTokenizer),
     "albert":(AlbertConfig,AlbertForTokenClassification,AlbertTokenizer),
-    "bright_albert": (AlbertConfig,BrightAlbertForTokenClassification,AlbertTokenizer)
+    "bright_albert": (AlbertConfig,BrightAlbertForTokenClassification,AlbertTokenizer),
+    "xlmroberta": (XLMRobertaConfig, XLMRobertaForTokenClassification, XLMRobertaTokenizer)
 }
 
 logger = logging.getLogger(__name__)

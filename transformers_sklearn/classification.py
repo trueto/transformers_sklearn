@@ -21,6 +21,10 @@ from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassi
 from transformers import XLMConfig,XLMForSequenceClassification,XLMTokenizer
 from transformers import XLNetConfig, XLNetTokenizer,XLNetForSequenceClassification
 from transformers import DistilBertConfig,DistilBertForSequenceClassification,DistilBertTokenizer
+from transformers import XLMRobertaConfig,XLMRobertaForSequenceClassification,XLMRobertaTokenizer
+from transformers import FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer
+from transformers import CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer
+
 # from transformers_sklearn.model_albert import AlbertForSequenceClassification,AlbertConfig,AlbertTokenizer
 from transformers_sklearn.model_albert_fix import AlbertConfig,AlbertTokenizer,\
     AlbertForSequenceClassification,BrightAlbertForSequenceClassification
@@ -40,7 +44,10 @@ MODEL_CLASSES = {
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
     'distilbert': (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer),
     'albert': (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer),
-    'bright_albert': (AlbertConfig,BrightAlbertForSequenceClassification,AlbertTokenizer)
+    'bright_albert': (AlbertConfig,BrightAlbertForSequenceClassification,AlbertTokenizer),
+    "xlmroberta": (XLMRobertaConfig, XLMRobertaForSequenceClassification, XLMRobertaTokenizer),
+    "flaubert": (FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer),
+    "camembert": (CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer)
 }
 
 def set_seed(seed=520,n_gpu=1):
