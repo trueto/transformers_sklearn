@@ -1,0 +1,3 @@
+from transformers import AlbertConfig as ElectraConfig
+from .modeling_electra import ElectraForSequenceClassification,ElectraForTokenClassification
+from .tokenization_electra import ElectraTokenizer
