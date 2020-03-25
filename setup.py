@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name = 'transformers_sklearn',
-    version = "1.0.0",
+    version = "1.0.3",
     author = 'trueto',
     author_email='3130103836@zju.edu.cn',
     description="A sklearn wrapper for Transformers",

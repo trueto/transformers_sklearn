@@ -26,6 +26,8 @@ from transformers import XLMRobertaConfig,XLMRobertaForTokenClassification,XLMRo
 from transformers_sklearn.model_albert_fix import AlbertForTokenClassification,\
     AlbertTokenizer,AlbertConfig,BrightAlbertForTokenClassification
 
+from transformers_sklearn.model_electra import ElectraConfig,ElectraForTokenClassification,ElectraTokenizer
+
 ALL_MODELS = sum(
     (tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, RobertaConfig, DistilBertConfig)),
     ())
@@ -37,7 +39,8 @@ MODEL_CLASSES = {
     "camembert": (CamembertConfig, CamembertForTokenClassification, CamembertTokenizer),
     "albert":(AlbertConfig,AlbertForTokenClassification,AlbertTokenizer),
     "bright_albert": (AlbertConfig,BrightAlbertForTokenClassification,AlbertTokenizer),
-    "xlmroberta": (XLMRobertaConfig, XLMRobertaForTokenClassification, XLMRobertaTokenizer)
+    "xlmroberta": (XLMRobertaConfig, XLMRobertaForTokenClassification, XLMRobertaTokenizer),
+    "electra": (ElectraConfig,ElectraForTokenClassification,ElectraTokenizer)
 }
 
 logger = logging.getLogger(__name__)

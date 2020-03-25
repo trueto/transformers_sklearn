@@ -1,5 +1,6 @@
 import os
 import torch
+import copy
 import logging
 import random
 import numpy as np
@@ -67,7 +68,9 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                  model_name_or_path='bert-base-chinese',
                  output_dir='ts_results',config_name='',
                  tokenizer_name='',cache_dir='model_cache',
-                 max_seq_length=512,evaluate_during_training=True,
+                 max_seq_length=512,do_kd=True,kd_coeff=1.0,
+                 kd_decay = 0.995,
+                 evaluate_during_training=True,
                  do_lower_case=False,per_gpu_train_batch_size=8,
                  per_gpu_eval_batch_size=8,gradient_accumulation_steps=1,
                  learning_rate=5e-5,weight_decay=0.01,adam_epsilon=1e-8,
@@ -76,7 +79,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                  eval_all_checkpoints=True,no_cuda=False,
                  overwrite_output_dir=False,overwrite_cache=False,
                  seed=520,fp16=False,fp16_opt_level='01',
-                 local_rank=-1,val_fraction=0.1,discr=False,lr_decay=10):
+                 local_rank=-1,val_fraction=0.1):
         """
 
         :param data_dir: The input data dir.used for cache the train_data.
@@ -88,6 +91,9 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         :param cache_dir:Where do you want to store the pre-trained models downloaded from s3
         :param max_seq_length:The maximum total input sequence length after tokenization.
         :param evaluate_during_training:Rul evaluation during training at each logging step.
+        :param do_kd: Whether to do knowledge distillation (KD).
+        :param kd_coeff: KD loss coefficient.
+        :param kd_decay: The exponential KD decay
         :param do_lower_case:Set this flag if you are using an uncased model.
         :param per_gpu_train_batch_size:Batch size per GPU/CPU for training.
         :param per_gpu_eval_batch_size:Batch size per GPU/CPU for evaluation.
@@ -111,7 +117,6 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                              "See details at https://nvidia.github.io/apex/amp.html
         :param local_rank:For distributed training: local_rank
         :param val_fraction:the val/train fraction
-        :param discr: Whether to do discriminative fine-tuning.
         """
         self.model_type = model_type
         self.model_name_or_path = model_name_or_path
@@ -120,6 +125,9 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         self.tokenizer_name = tokenizer_name
         self.cache_dir = cache_dir
         self.max_seq_length = max_seq_length
+        self.do_kd = do_kd
+        self.kd_coeff = kd_coeff
+        self.kd_decay = kd_decay
         self.evaluate_during_training = evaluate_during_training
         self.do_lower_case = do_lower_case
         self.per_gpu_train_batch_size = per_gpu_train_batch_size
@@ -144,8 +152,6 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         self.local_rank = local_rank
         self.val_fraction = val_fraction
         self.data_dir = data_dir
-        self.discr = discr
-        self.lr_decay = lr_decay
 
         # Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
@@ -247,9 +253,8 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
 
     def predict_proba(self,X):
         # Load a trained model and vocabulary that you have fine-tuned
-        config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
-        config = config_class.from_pretrained(self.output_dir)
-        model = model_class.from_pretrained(self.output_dir,config=config)
+        _, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
+        model = model_class.from_pretrained(self.output_dir)
         tokenizer = tokenizer_class.from_pretrained(self.output_dir)
         model.to(self.device)
 
@@ -269,7 +274,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         logger.info("  Batch size = %d", test_batch_size)
 
         probs = None
-        logits = None
+
         for batch in tqdm(test_dataloader,desc='Predicting'):
             model.eval()
             batch = tuple(t.to(self.device) for t in batch)
@@ -284,23 +289,18 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                     # XLM, DistilBERT and RoBERTa don't use segment_ids
                     inputs['token_type_ids'] = batch[2] if self.model_type in ['bert','xlnet'] else None
                 outputs = model(**inputs)
-                _, logit = outputs[:2]
-
-            prob = F.softmax(logit, dim=-1)
+                _, logits = outputs[:2]
+            prob = F.softmax(logits, dim=-1)
             if probs is None:
                 probs = prob.detach().cpu().numpy()
-                logits = logit.detach().cpu().numpy()
             else:
                 prob = prob.detach().cpu().numpy()
                 probs = np.append(probs,prob,axis=0)
-                logit = logit.detach().cpu().numpy()
-                logits = np.append(logits,logit,axis=0)
-
-        return probs,logits
+        return probs
 
     def predict(self,X):
         args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
-        probs,_ = self.predict_proba(X)
+        probs = self.predict_proba(X)
         preds = np.argmax(probs, axis=1)
         y_pred = np.array([args.id2label[y] for y in preds])
         return y_pred
@@ -333,45 +333,11 @@ def train(args, train_dataset, model):
 
     args.warmup_steps = int(t_total*args.warmup_proportion)
     # Prepare optimizer and schedule (linear warmup and decay)
-    if args.discr and args.model_type=='bert':
-        no_decay = ['bias', 'gamma', 'beta']
-        group1 = ['layer.0.', 'layer.1.', 'layer.2.', 'layer.3.']
-        group2 = ['layer.4.', 'layer.5.', 'layer.6.', 'layer.7.']
-        group3 = ['layer.8.', 'layer.9.', 'layer.10.', 'layer.11.']
-        group_all = ['layer.0.', 'layer.1.', 'layer.2.', 'layer.3.', 'layer.4.', 'layer.5.', 'layer.6.', 'layer.7.',
-                     'layer.8.', 'layer.9.', 'layer.10.', 'layer.11.']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if
-                        not any(nd in n for nd in no_decay) and not any(nd in n for nd in group_all)],
-             'weight_decay': args.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if
-                        not any(nd in n for nd in no_decay) and any(nd in n for nd in group1)],
-             'weight_decay': args.weight_decay, 'lr': args.learning_rate / args.lr_decay},
-            {'params': [p for n, p in model.named_parameters() if
-                        not any(nd in n for nd in no_decay) and any(nd in n for nd in group2)],
-             'weight_decay': args.weight_decay, 'lr': args.learning_rate},
-            {'params': [p for n, p in model.named_parameters() if
-                        not any(nd in n for nd in no_decay) and any(nd in n for nd in group3)],
-             'weight_decay': args.weight_decay, 'lr': args.learning_rate * args.lr_decay},
-            {'params': [p for n, p in model.named_parameters() if
-                        any(nd in n for nd in no_decay) and not any(nd in n for nd in group_all)],
-             'weight_decay': 0.0},
-            {'params': [p for n, p in model.named_parameters() if
-                        any(nd in n for nd in no_decay) and any(nd in n for nd in group1)], 'weight_decay': 0.0,
-             'lr': args.learning_rate / args.lr_decay},
-            {'params': [p for n, p in model.named_parameters() if
-                        any(nd in n for nd in no_decay) and any(nd in n for nd in group2)], 'weight_decay': 0.0,
-             'lr': args.learning_rate},
-            {'params': [p for n, p in model.named_parameters() if
-                        any(nd in n for nd in no_decay) and any(nd in n for nd in group3)], 'weight_decay': 0.0,
-             'lr': args.learning_rate * args.lr_decay},
+    no_decay = ['bias', 'LayerNorm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-    else:
-        no_decay = ['bias', 'LayerNorm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-            ]
 
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
@@ -406,6 +372,12 @@ def train(args, train_dataset, model):
     tr_loss, logging_loss = 0.0, 0.0
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
+
+    if args.do_kd:
+        kd_loss_fn = torch.nn.MSELoss()
+        kd_model = copy.deepcopy(model)
+        kd_model.eval()
+
     set_seed(seed=args.seed,n_gpu=args.n_gpu) # Added here for reproductibility (even between python 2 and 3)
     for _ in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
@@ -420,6 +392,13 @@ def train(args, train_dataset, model):
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
+            if args.do_kd:
+                inputs['labels'] = None
+                with torch.no_grad():
+                    kd_logits = kd_model(**inputs)[0]
+                kd_loss = kd_loss_fn(outputs[1],kd_logits)
+                loss += args.kd_coeff * kd_loss
+
             if args.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
             if args.gradient_accumulation_steps > 1:
@@ -428,20 +407,26 @@ def train(args, train_dataset, model):
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
+                torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
             else:
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
             tr_loss += loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
-                if args.fp16:
-                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
-                else:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
+
+                if args.do_kd:
+                    kd_dekay = min(args.kd_decay, (1+global_step)/(10+global_step))
+                    one_minus_decay = 1.0 - kd_dekay
+                    with torch.no_grad():
+                        parameters = [p for p in model.parameters() if p.requires_grad]
+                        for s_param, param in zip(kd_model.parameters(),parameters):
+                            s_param.sub_(one_minus_decay*(s_param-param))
 
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
@@ -463,13 +448,15 @@ def train(args, train_dataset, model):
                     torch.save(args, os.path.join(output_dir, 'training_args.bin'))
                     logger.info("Saving model checkpoint to %s", output_dir)
 
-
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
             break
+
+        if 'cuda' in str(args.device):
+            torch.cuda.empty_cache()
 
     if args.local_rank in [-1, 0]:
         tb_writer.close()

@@ -29,6 +29,8 @@ from transformers import CamembertConfig,CamembertForSequenceClassification,Came
 
 from transformers_sklearn.model_albert_fix import AlbertConfig,\
     AlbertForSequenceClassification,AlbertTokenizer,BrightAlbertForSequenceClassification
+from transformers_sklearn.model_electra import ElectraConfig,ElectraForSequenceClassification,ElectraTokenizer
+
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,8 @@ MODEL_CLASSES = {
     'bright_albert': (AlbertConfig,BrightAlbertForSequenceClassification,AlbertTokenizer),
     "xlmroberta": (XLMRobertaConfig, XLMRobertaForSequenceClassification, XLMRobertaTokenizer),
     "flaubert": (FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer),
-    "camembert": (CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer)
+    "camembert": (CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer),
+    "electra": (ElectraConfig,ElectraForSequenceClassification,ElectraTokenizer)
 }
 
 def set_seed(seed=520,n_gpu=1):
