@@ -168,7 +168,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         # Set seed
         set_seed(seed=self.seed,n_gpu=self.n_gpu)
 
-    def fit(self,X,y):
+    def fit(self,X,y,sample_weight=None):
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
             # os.mkdir(self.data_dir)
@@ -185,6 +185,8 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         processor = ClassificationProcessor(X,y)
         label_list = processor.get_labels()
         num_labels = len(label_list)
+
+        self.classes_ = label_list
 
         self.id2label = {i: label for i,label in enumerate(label_list)}
 
@@ -289,18 +291,18 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
             prob = F.softmax(logit, dim=-1)
             if probs is None:
                 probs = prob.detach().cpu().numpy()
-                logits = logit.detach().cpu().numpy()
+                # logits = logit.detach().cpu().numpy()
             else:
                 prob = prob.detach().cpu().numpy()
                 probs = np.append(probs,prob,axis=0)
-                logit = logit.detach().cpu().numpy()
-                logits = np.append(logits,logit,axis=0)
+                #logit = logit.detach().cpu().numpy()
+                #logits = np.append(logits,logit,axis=0)
 
-        return probs,logits
+        return probs
 
     def predict(self,X):
         args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
-        probs,_ = self.predict_proba(X)
+        probs = self.predict_proba(X)
         preds = np.argmax(probs, axis=1)
         y_pred = np.array([args.id2label[y] for y in preds])
         return y_pred
