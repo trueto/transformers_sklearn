@@ -1,3 +1,4 @@
+# refer https://github.com/clcarwin/focal_loss_pytorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
