@@ -3,3 +3,4 @@ from .classification_sda import BERTologyClassifier as SDA_BERTologyClassifier
 from .freelb_classification import BERTologyClassifier as Freelb_BERTologyClassifier
 from .token_classification import BERTologyNERClassifer
 from .regression import BERTologyRegressor
+from .extract_features import BERTologyToVec
