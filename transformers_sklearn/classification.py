@@ -78,7 +78,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                  overwrite_output_dir=False,overwrite_cache=False,
                  seed=520,fp16=False,fp16_opt_level='01',
                  local_rank=-1,val_fraction=0.1,discr=False,lr_decay=10,
-                 focal_loss=False):
+                 focal_loss=False,search_cv=False):
         """
 
         :param data_dir: The input data dir.used for cache the train_data.
@@ -149,6 +149,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         self.discr = discr
         self.lr_decay = lr_decay
         self.focal_loss = focal_loss
+        self.search_cv = search_cv
 
         # Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
@@ -247,16 +248,21 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         #     # model = model_class.from_pretrained(self.output_dir)
         #     # tokenizer = tokenizer_class.from_pretrained(self.output_dir)
         #     # model.to(self.device)
-        # self.model = model
-        # self.tokenizer = tokenizer
+        if self.search_cv:
+            self.model = model
+            self.tokenizer = tokenizer
         return self
 
     def predict_proba(self,X):
         # Load a trained model and vocabulary that you have fine-tuned
-        config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
-        config = config_class.from_pretrained(self.output_dir)
-        model = model_class.from_pretrained(self.output_dir,config=config)
-        tokenizer = tokenizer_class.from_pretrained(self.output_dir)
+        if self.search_cv:
+            tokenizer = self.tokenizer
+            model = self.model
+        else:
+            config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
+            config = config_class.from_pretrained(self.output_dir)
+            model = model_class.from_pretrained(self.output_dir,config=config)
+            tokenizer = tokenizer_class.from_pretrained(self.output_dir)
         model.to(self.device)
 
         # prepare data
@@ -292,6 +298,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                 outputs = model(**inputs)
                 _, logit = outputs[:2]
 
+
             prob = F.softmax(logit, dim=-1)
             if probs is None:
                 probs = prob.detach().cpu().numpy()
@@ -305,10 +312,14 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         return probs
 
     def predict(self,X):
-        args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
+        if self.search_cv:
+            id2label = self.id2label
+        else:
+            args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
+            id2label = args.id2label
         probs = self.predict_proba(X)
         preds = np.argmax(probs, axis=1)
-        y_pred = np.array([args.id2label[y] for y in preds])
+        y_pred = np.array([id2label[y] for y in preds])
         return y_pred
 
     def score(self, X, y, sample_weight=None):
@@ -484,6 +495,9 @@ def train(args, train_dataset, model):
             train_iterator.close()
             break
 
+        if 'cuda' in str(args.device):
+            torch.cuda.empty_cache()
+
     if args.local_rank in [-1, 0]:
         tb_writer.close()
 
@@ -533,6 +547,9 @@ def evaluate(args, val_dataset, model, prefix=""):
         else:
             preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
             out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+
+        if 'cuda' in str(args.device):
+            torch.cuda.empty_cache()
 
     eval_loss = eval_loss / nb_eval_steps
     preds = np.argmax(preds, axis=1)
