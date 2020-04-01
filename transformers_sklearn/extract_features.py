@@ -34,6 +34,7 @@ from transformers_sklearn.model_albert_fix import AlbertConfig,AlbertTokenizer,\
 
 from transformers_sklearn.model_electra import ElectraConfig,ElectraForSequenceClassification,ElectraTokenizer
 
+from .utils import FocalLoss
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:
@@ -86,7 +87,8 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
                  eval_all_checkpoints=True,no_cuda=False,
                  overwrite_output_dir=True,overwrite_cache=False,
                  seed=42,fp16=False,fp16_opt_level='O1',local_rank=-1,
-                 server_ip='',server_port='',val_fraction=0.1):
+                 server_ip='',server_port='',val_fraction=0.1,
+                 focal_loss=False):
         super().__init__()
         self.data_dir = data_dir
         self.model_type = model_type
@@ -121,6 +123,7 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
         self.server_ip = server_ip
         self.server_port = server_port
         self.val_fraction = val_fraction
+        self.focal_loss = focal_loss
 
         # Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
@@ -343,8 +346,16 @@ def train(args, train_dataset, model):
             if args.model_type != 'distilbert':
                 inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
             outputs = model(**inputs)
-            loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
-
+            if args.focal_loss:
+                logits = outputs[1]
+                if args.num_labels == 1:
+                    loss = outputs[0]
+                else:
+                    loss_fct = FocalLoss()
+                    input = logits.view(-1, args.num_labels)
+                    loss = loss_fct(input, batch[3].view(-1))
+            else:
+                loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
             if args.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
             if args.gradient_accumulation_steps > 1:
