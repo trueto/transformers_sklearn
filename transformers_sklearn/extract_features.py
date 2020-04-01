@@ -167,6 +167,7 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
         num_labels = len(label_list)
 
         self.classes_ = label_list
+        self.num_labels = num_labels
 
         self.id2label = {i: label for i, label in enumerate(label_list)}
 
