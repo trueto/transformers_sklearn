@@ -1,69 +1,36 @@
 import os
 import torch
-import random
 import logging
-
+import random
 import numpy as np
 from tqdm import tqdm, trange
-from sklearn.base import BaseEstimator,TransformerMixin
-
+import torch.nn.functional as F
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except:
+    from tensorboardX import SummaryWriter
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               random_split)
 from torch.utils.data.distributed import DistributedSampler
 
-from transformers import (WEIGHTS_NAME,AdamW,AutoConfig,
-                          AutoModelForSequenceClassification,
-                          AutoTokenizer,
-                          get_linear_schedule_with_warmup,
-                          BertConfig,BertTokenizer,
-                          BertForSequenceClassification,
-                          )
+from sklearn.base import BaseEstimator,ClassifierMixin
+from sklearn.metrics import f1_score
 
-from transformers import (
-XLNetConfig, XLNetForSequenceClassification, XLNetTokenizer,
-XLMConfig, XLMForSequenceClassification, XLMTokenizer,
-RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer,
-DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer,
-XLMRobertaConfig, XLMRobertaForSequenceClassification, XLMRobertaTokenizer,
-FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer,
-CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer
-)
+from transformers import AdamW, get_linear_schedule_with_warmup
 
-from transformers_sklearn.model_albert_fix import AlbertConfig,AlbertTokenizer,\
-    AlbertForSequenceClassification,BrightAlbertForSequenceClassification
+from .el_utils import ClassificationProcessor,load_and_cache_examples,acc_and_f1
 
-from transformers_sklearn.model_electra import ElectraConfig,ElectraForSequenceClassification,ElectraTokenizer
-
-from .utils import FocalLoss
-try:
-    from torch.utils.tensorboard import SummaryWriter
-except ImportError:
-    from tensorboardX import SummaryWriter
-
-
-from .utils import (ClassificationProcessor,load_and_cache_examples,acc_and_f1,
-                    BertForSequenceVector, BertForTokenVector)
+from transformers import BertConfig, BertTokenizer
+from transformers_sklearn.model_albert_fix import AlbertConfig, AlbertTokenizer
+from .model import BertForEL, AlbertForEL
 
 logger = logging.getLogger(__name__)
 
-
-MODEL_VEC_CLASSES = {
-    "bert": (BertConfig, BertForSequenceVector, BertTokenizer),
-    "bert_token": (BertConfig, BertForTokenVector, BertTokenizer)
-}
+ALL_MODELS = {}
 
 MODEL_CLASSES = {
-    'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
-    'xlnet': (XLNetConfig, XLNetForSequenceClassification, XLNetTokenizer),
-    'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
-    'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
-    'distilbert': (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer),
-    'albert': (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer),
-    'bright_albert': (AlbertConfig,BrightAlbertForSequenceClassification,AlbertTokenizer),
-    "xlmroberta": (XLMRobertaConfig, XLMRobertaForSequenceClassification, XLMRobertaTokenizer),
-    "flaubert": (FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer),
-    "camembert": (CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer),
-    "electra": (ElectraConfig,ElectraForSequenceClassification,ElectraTokenizer)
+    'bert': (BertConfig, BertForEL, BertTokenizer),
+    'albert': (AlbertConfig, AlbertForEL, AlbertTokenizer)
 }
 
 def set_seed(seed=520,n_gpu=1):
@@ -73,25 +40,59 @@ def set_seed(seed=520,n_gpu=1):
     if n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
-class BERTologyToVec(BaseEstimator,TransformerMixin):
+class BERTologyELClassifier(BaseEstimator,ClassifierMixin):
 
-    def __init__(self,data_dir="cache_data",model_type="bert",
-                 model_name_or_path="bert-base-chinese",
-                 output_dir="fine-tuned_models",config_name="",
-                 tokenizer_name="",cache_dir="download_models",
-                 max_seq_length=128,evaluate_during_training=False,
+    def __init__(self,data_dir='ts_data',model_type='bert',
+                 model_name_or_path='bert-base-chinese',
+                 output_dir='ts_results',config_name='',
+                 tokenizer_name='',cache_dir='model_cache',
+                 max_seq_length=512,evaluate_during_training=True,
                  do_lower_case=False,per_gpu_train_batch_size=8,
                  per_gpu_eval_batch_size=8,gradient_accumulation_steps=1,
-                 learning_rate=5e-5,weight_decay=0.0,adam_epsilon=1e-8,
+                 learning_rate=5e-5,weight_decay=0.01,adam_epsilon=1e-8,
                  max_grad_norm=1.0,num_train_epochs=3,max_steps=-1,
-                 warmup_proportion=0.1,logging_steps=500,save_steps=500,
+                 warmup_proportion=0.1,logging_steps=50,save_steps=50,
                  eval_all_checkpoints=True,no_cuda=False,
-                 overwrite_output_dir=True,overwrite_cache=False,
-                 seed=42,fp16=False,fp16_opt_level='O1',local_rank=-1,
-                 server_ip='',server_port='',val_fraction=0.1,
-                 focal_loss=False):
-        super().__init__()
-        self.data_dir = data_dir
+                 overwrite_output_dir=False,overwrite_cache=False,
+                 seed=520,fp16=False,fp16_opt_level='01',
+                 local_rank=-1, val_fraction=0.1,
+                 discr=False,lr_decay=10,search_cv=False):
+        """
+
+        :param data_dir: The input data dir.used for cache the train_data.
+        :param model_type: Model type in ['bert','xlnet','xlm','roberta','distilbert','albert']
+        :param model_name_or_path:Path to pre-trained model or shortcut name
+        :param output_dir:The output directory where the model predictions and checkpoints will be written
+        :param config_name:Pretrained config name or path if not the same as model_name
+        :param tokenizer_name:Pretrained tokenizer name or path if not the same as model_name
+        :param cache_dir:Where do you want to store the pre-trained models downloaded from s3
+        :param max_seq_length:The maximum total input sequence length after tokenization.
+        :param evaluate_during_training:Rul evaluation during training at each logging step.
+        :param do_lower_case:Set this flag if you are using an uncased model.
+        :param per_gpu_train_batch_size:Batch size per GPU/CPU for training.
+        :param per_gpu_eval_batch_size:Batch size per GPU/CPU for evaluation.
+        :param gradient_accumulation_steps:Number of updates steps to accumulate before performing a backward/update pass.
+        :param learning_rate:The initial learning rate for Adam.
+        :param weight_decay:Weight deay if we apply some.
+        :param adam_epsilon:Epsilon for Adam optimizer.
+        :param max_grad_norm:Max gradient norm.
+        :param num_train_epochs:Total number of training epochs to perform.
+        :param max_steps:If > 0: set total number of training steps to perform. Override num_train_epochs.")
+        :param warmup_proportion:Linear warmup over warmup_steps.
+        :param logging_steps:Log every X updates steps.
+        :param save_steps:Save checkpoint every X updates steps.
+        :param eval_all_checkpoints:
+        :param no_cuda:Avoid using CUDA when available
+        :param overwrite_output_dir:Overwrite the content of the output directory
+        :param overwrite_cache:Overwrite the cached training and evaluation sets
+        :param seed:random seed for initialization
+        :param fp16:Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit
+        :param fp16_opt_level:For fp16: Apex AMP optimization level selected in ['O0', 'O1', 'O2', and 'O3']."
+                             "See details at https://nvidia.github.io/apex/amp.html
+        :param local_rank:For distributed training: local_rank
+        :param val_fraction:the val/train fraction
+        :param discr: Whether to do discriminative fine-tuning.
+        """
         self.model_type = model_type
         self.model_name_or_path = model_name_or_path
         self.output_dir = output_dir
@@ -121,10 +122,11 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
         self.fp16 = fp16
         self.fp16_opt_level = fp16_opt_level
         self.local_rank = local_rank
-        self.server_ip = server_ip
-        self.server_port = server_port
         self.val_fraction = val_fraction
-        self.focal_loss = focal_loss
+        self.data_dir = data_dir
+        self.discr = discr
+        self.lr_decay = lr_decay
+        self.search_cv = search_cv
 
         # Setup CUDA, GPU & distributed training
         if self.local_rank == -1 or self.no_cuda:
@@ -145,10 +147,9 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
                        self.local_rank, device, self.n_gpu, bool(self.local_rank != -1), self.fp16)
 
         # Set seed
-        set_seed(seed=self.seed, n_gpu=self.n_gpu)
+        set_seed(seed=self.seed,n_gpu=self.n_gpu)
 
-    def fit(self,X,y,sample_weight=None):
-
+    def fit(self, X, y, start_positions, end_positions, sample_weight=None):
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
             # os.mkdir(self.data_dir)
@@ -162,15 +163,14 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
             raise ValueError(
                 "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
                     self.output_dir))
-
-        processor = ClassificationProcessor(X, y)
+        processor = ClassificationProcessor(X, start_positions, end_positions, y)
         label_list = processor.get_labels()
         num_labels = len(label_list)
 
         self.classes_ = label_list
         self.num_labels = num_labels
 
-        self.id2label = {i: label for i, label in enumerate(label_list)}
+        self.id2label = {i: label for i,label in enumerate(label_list)}
 
         # Load pretrained model and tokenizer
         if self.local_rank not in [-1, 0]:
@@ -221,34 +221,45 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
         #     # Good practice: save your training arguments together with the trained model
             torch.save(self, os.path.join(self.output_dir, 'training_args.bin'))
 
+        #     # # Load a trained model and vocabulary that you have fine-tuned
+        #     # model = model_class.from_pretrained(self.output_dir)
+        #     # tokenizer = tokenizer_class.from_pretrained(self.output_dir)
+        #     # model.to(self.device)
+        if self.search_cv:
+            self.model = model
+            self.tokenizer = tokenizer
         return self
 
-    def transform(self,X):
+    def predict_proba(self, X, start_positions, end_positions):
         # Load a trained model and vocabulary that you have fine-tuned
-        config_class, model_class, tokenizer_class = MODEL_VEC_CLASSES[self.model_type]
-        config = config_class.from_pretrained(self.output_dir)
-        model = model_class.from_pretrained(self.output_dir, config=config)
-        tokenizer = tokenizer_class.from_pretrained(self.output_dir)
+        if self.search_cv:
+            tokenizer = self.tokenizer
+            model = self.model
+        else:
+            config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
+            config = config_class.from_pretrained(self.output_dir)
+            model = model_class.from_pretrained(self.output_dir, config=config)
+            tokenizer = tokenizer_class.from_pretrained(self.output_dir)
         model.to(self.device)
 
         # prepare data
-        processor = ClassificationProcessor(X)
+        processor = ClassificationProcessor(X, start_positions, end_positions)
         test_batch_size = self.per_gpu_eval_batch_size * max(1, self.n_gpu)
-        test_dataset = load_and_cache_examples(self, tokenizer, processor, [None], evaluate=True)
+        test_dataset = load_and_cache_examples(self,tokenizer, processor, [None],evaluate=True)
         test_sampler = SequentialSampler(test_dataset) if self.local_rank == -1 else DistributedSampler(test_dataset)
         test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=test_batch_size)
 
         # multi-gpu eval
         if self.n_gpu > 1:
             model = torch.nn.DataParallel(model)
-
-        # transforming
-        logger.info("***** Running transform*****")
+        # Predict
+        logger.info("***** Running predict*****")
         logger.info("  Num examples = %d", len(test_dataset))
         logger.info("  Batch size = %d", test_batch_size)
 
-        vecs = None
-        for batch in tqdm(test_dataloader,desc='Transforming'):
+        probs = None
+        match_scores = None
+        for batch in tqdm(test_dataloader,desc='Predicting'):
             model.eval()
             batch = tuple(t.to(self.device) for t in batch)
 
@@ -256,23 +267,41 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
                 inputs = {
                     'input_ids': batch[0],
                     'attention_mask': batch[1],
-                    'labels': batch[3]
+                    'start_positions': batch[3],
+                    'end_positions': batch[4],
+                    'labels': batch[5]
                 }
                 if self.model_type != 'distilbert':
                     # XLM, DistilBERT and RoBERTa don't use segment_ids
                     inputs['token_type_ids'] = batch[2] if self.model_type in ['bert','xlnet'] else None
                 outputs = model(**inputs)
+                _, logit = outputs[:2]
+                match_score = outputs[2]
 
-            if vecs is None:
-                vecs = outputs.detach().cpu().numpy()
+
+            match_score = F.softmax(match_score, dim=-1)
+            prob = F.softmax(logit, dim=-1)
+            if probs is None:
+                probs = prob.detach().cpu().numpy()
+                match_scores = match_score.detach().cpu().numpy()
+                # logits = logit.detach().cpu().numpy()
             else:
-                vec = outputs.detach().cpu().numpy()
-                vecs = np.append(vecs, vec, axis=0)
-        return vecs
+                prob = prob.detach().cpu().numpy()
+                probs = np.append(probs,prob,axis=0)
+                match_score = match_score.detach().cpu().numpy()
+                match_scores = np.append(match_scores,match_score, axis=0)
+        return probs, match_scores
 
-    def fit_transform(self, X, y=None, **fit_params):
-        self.fit(X,y)
-        return self.transform(X)
+    def predict(self,X, start_positions, end_positions):
+        if self.search_cv:
+            id2label = self.id2label
+        else:
+            args = torch.load(os.path.join(self.output_dir, 'training_args.bin'))
+            id2label = args.id2label
+        probs, match_scores = self.predict_proba(X, start_positions, end_positions)
+        preds = np.argmax(probs, axis=1)
+        y_pred = np.array([id2label[y] for y in preds])
+        return y_pred, match_scores
 
 
 def train(args, train_dataset, model):
@@ -297,11 +326,45 @@ def train(args, train_dataset, model):
 
     args.warmup_steps = int(t_total*args.warmup_proportion)
     # Prepare optimizer and schedule (linear warmup and decay)
-    no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+    if args.discr and args.model_type=='bert':
+        no_decay = ['bias', 'gamma', 'beta']
+        group1 = ['layer.0.', 'layer.1.', 'layer.2.', 'layer.3.']
+        group2 = ['layer.4.', 'layer.5.', 'layer.6.', 'layer.7.']
+        group3 = ['layer.8.', 'layer.9.', 'layer.10.', 'layer.11.']
+        group_all = ['layer.0.', 'layer.1.', 'layer.2.', 'layer.3.', 'layer.4.', 'layer.5.', 'layer.6.', 'layer.7.',
+                     'layer.8.', 'layer.9.', 'layer.10.', 'layer.11.']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in model.named_parameters() if
+                        not any(nd in n for nd in no_decay) and not any(nd in n for nd in group_all)],
+             'weight_decay': args.weight_decay},
+            {'params': [p for n, p in model.named_parameters() if
+                        not any(nd in n for nd in no_decay) and any(nd in n for nd in group1)],
+             'weight_decay': args.weight_decay, 'lr': args.learning_rate / args.lr_decay},
+            {'params': [p for n, p in model.named_parameters() if
+                        not any(nd in n for nd in no_decay) and any(nd in n for nd in group2)],
+             'weight_decay': args.weight_decay, 'lr': args.learning_rate},
+            {'params': [p for n, p in model.named_parameters() if
+                        not any(nd in n for nd in no_decay) and any(nd in n for nd in group3)],
+             'weight_decay': args.weight_decay, 'lr': args.learning_rate * args.lr_decay},
+            {'params': [p for n, p in model.named_parameters() if
+                        any(nd in n for nd in no_decay) and not any(nd in n for nd in group_all)],
+             'weight_decay': 0.0},
+            {'params': [p for n, p in model.named_parameters() if
+                        any(nd in n for nd in no_decay) and any(nd in n for nd in group1)], 'weight_decay': 0.0,
+             'lr': args.learning_rate / args.lr_decay},
+            {'params': [p for n, p in model.named_parameters() if
+                        any(nd in n for nd in no_decay) and any(nd in n for nd in group2)], 'weight_decay': 0.0,
+             'lr': args.learning_rate},
+            {'params': [p for n, p in model.named_parameters() if
+                        any(nd in n for nd in no_decay) and any(nd in n for nd in group3)], 'weight_decay': 0.0,
+             'lr': args.learning_rate * args.lr_decay},
         ]
+    else:
+        no_decay = ['bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
+            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            ]
 
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
@@ -344,20 +407,14 @@ def train(args, train_dataset, model):
             batch = tuple(t.to(args.device) for t in batch)
             inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1],
-                      'labels':         batch[3]}
+                      'start_positions': batch[3],
+                      'end_positions': batch[4],
+                      'labels':         batch[5]}
             if args.model_type != 'distilbert':
                 inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
             outputs = model(**inputs)
-            if args.focal_loss:
-                logits = outputs[1]
-                if args.num_labels == 1:
-                    loss = outputs[0]
-                else:
-                    loss_fct = FocalLoss()
-                    input = logits.view(-1, args.num_labels)
-                    loss = loss_fct(input, batch[3].view(-1))
-            else:
-                loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+            loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+
             if args.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
             if args.gradient_accumulation_steps > 1:
@@ -409,6 +466,9 @@ def train(args, train_dataset, model):
             train_iterator.close()
             break
 
+        if 'cuda' in str(args.device):
+            torch.cuda.empty_cache()
+
     if args.local_rank in [-1, 0]:
         tb_writer.close()
 
@@ -444,7 +504,9 @@ def evaluate(args, val_dataset, model, prefix=""):
         with torch.no_grad():
             inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1],
-                      'labels':         batch[3]}
+                      'start_positions': batch[3],
+                      'end_positions': batch[4],
+                      'labels':         batch[5]}
             if args.model_type != 'distilbert':
                 inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
             outputs = model(**inputs)
@@ -458,6 +520,9 @@ def evaluate(args, val_dataset, model, prefix=""):
         else:
             preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
             out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+
+        if 'cuda' in str(args.device):
+            torch.cuda.empty_cache()
 
     eval_loss = eval_loss / nb_eval_steps
     preds = np.argmax(preds, axis=1)
