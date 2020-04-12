@@ -24,10 +24,11 @@ from transformers import DistilBertConfig,DistilBertForSequenceClassification,Di
 from transformers import XLMRobertaConfig,XLMRobertaForSequenceClassification,XLMRobertaTokenizer
 from transformers import FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer
 from transformers import CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer
-
+from transformers import AlbertConfig,AlbertForSequenceClassification,AlbertTokenizer
 # from transformers_sklearn.model_albert import AlbertForSequenceClassification,AlbertConfig,AlbertTokenizer
-from transformers_sklearn.model_albert_fix import AlbertConfig,AlbertTokenizer,\
-    AlbertForSequenceClassification,BrightAlbertForSequenceClassification
+
+# from transformers_sklearn.model_albert_fix import AlbertConfig,AlbertTokenizer,\
+#    AlbertForSequenceClassification,BrightAlbertForSequenceClassification
 
 from transformers_sklearn.model_electra import ElectraConfig,ElectraForSequenceClassification,ElectraTokenizer
 
@@ -48,7 +49,7 @@ MODEL_CLASSES = {
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
     'distilbert': (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer),
     'albert': (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer),
-    'bright_albert': (AlbertConfig,BrightAlbertForSequenceClassification,AlbertTokenizer),
+    #'bright_albert': (AlbertConfig,BrightAlbertForSequenceClassification,AlbertTokenizer),
     "xlmroberta": (XLMRobertaConfig, XLMRobertaForSequenceClassification, XLMRobertaTokenizer),
     "flaubert": (FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer),
     "camembert": (CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer),

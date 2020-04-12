@@ -9,7 +9,6 @@ class BertForEL(BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.alpha = config.alpha
 
         self.bert = BertModel(config)
         self.dense_1 = nn.Linear(config.hidden_size, 128)
@@ -63,7 +62,7 @@ class BertForEL(BertPreTrainedModel):
                 loss_fn = nn.MSELoss()
                 loss = loss_fn(logits.view(-1), labels.view(-1))
             elif self.num_labels == 2:
-                loss_fn = FocalLoss(alpha=self.alpha)
+                loss_fn = FocalLoss()
                 loss = loss_fn(logits.view(-1, self.num_labels), labels.view(-1))
             else:
                 loss_fn = nn.CrossEntropyLoss()
@@ -80,7 +79,6 @@ class AlbertForEL(AlbertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.alpha = config.alpha
 
         self.albert = AlbertModel(config)
         self.dense_1 = nn.Linear(config.hidden_size, 128)
@@ -134,7 +132,7 @@ class AlbertForEL(AlbertPreTrainedModel):
                 loss_fn = nn.MSELoss()
                 loss = loss_fn(logits.view(-1), labels.view(-1))
             elif self.num_labels == 2:
-                loss_fn = FocalLoss(alpha=self.alpha)
+                loss_fn = FocalLoss()
                 loss = loss_fn(logits.view(-1, self.num_labels), labels.view(-1))
             else:
                 loss_fn = nn.CrossEntropyLoss()

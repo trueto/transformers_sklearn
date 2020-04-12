@@ -179,20 +179,9 @@ class BERTologyELClassifier(BaseEstimator,ClassifierMixin):
 
         self.model_type = self.model_type.lower()
 
-        if self.num_labels == 2:
-            y_ = to_numpy(y)
-            bin_count = np.bincount(y_)
-            neg_ = bin_count[0] / len(y_)
-            if neg_ > 0.5:
-                alpha = 1 - neg_
-            else:
-                alpha = neg_
-        else:
-            alpha = 0.25
         config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
         config = config_class.from_pretrained(self.config_name if self.config_name else self.model_name_or_path,
                                               num_labels=num_labels,
-                                              alpha=alpha,
                                               cache_dir=self.cache_dir if self.cache_dir else None,
                                               share_type='all' if 'albert' in self.model_type else None
                                               )
