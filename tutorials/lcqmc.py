@@ -43,5 +43,3 @@ if __name__ == '__main__':
     test_report = classification_report(y_test,y_pred,digits=4)
     with open('lcqmc_test.txt','w',encoding='utf8') as f:
         f.write(test_report)
-
-

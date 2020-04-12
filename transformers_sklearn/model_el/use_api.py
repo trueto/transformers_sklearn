@@ -18,7 +18,7 @@ from sklearn.metrics import f1_score
 
 from transformers import AdamW, get_linear_schedule_with_warmup
 
-from .el_utils import ClassificationProcessor,load_and_cache_examples,acc_and_f1
+from .el_utils import ClassificationProcessor,load_and_cache_examples,acc_and_f1, to_numpy
 
 from transformers import BertConfig, BertTokenizer
 from transformers_sklearn.model_albert_fix import AlbertConfig, AlbertTokenizer
@@ -170,6 +170,7 @@ class BERTologyELClassifier(BaseEstimator,ClassifierMixin):
         self.classes_ = label_list
         self.num_labels = num_labels
 
+
         self.id2label = {i: label for i,label in enumerate(label_list)}
 
         # Load pretrained model and tokenizer
@@ -178,9 +179,20 @@ class BERTologyELClassifier(BaseEstimator,ClassifierMixin):
 
         self.model_type = self.model_type.lower()
 
+        if self.num_labels == 2:
+            y_ = to_numpy(y)
+            bin_count = np.bincount(y_)
+            neg_ = bin_count[0] / len(y_)
+            if neg_ > 0.5:
+                alpha = 1 - neg_
+            else:
+                alpha = neg_
+        else:
+            alpha = 0.25
         config_class, model_class, tokenizer_class = MODEL_CLASSES[self.model_type]
         config = config_class.from_pretrained(self.config_name if self.config_name else self.model_name_or_path,
                                               num_labels=num_labels,
+                                              alpha=alpha,
                                               cache_dir=self.cache_dir if self.cache_dir else None,
                                               share_type='all' if 'albert' in self.model_type else None
                                               )
@@ -245,7 +257,7 @@ class BERTologyELClassifier(BaseEstimator,ClassifierMixin):
         # prepare data
         processor = ClassificationProcessor(X, start_positions, end_positions)
         test_batch_size = self.per_gpu_eval_batch_size * max(1, self.n_gpu)
-        test_dataset = load_and_cache_examples(self,tokenizer, processor, [None],evaluate=True)
+        test_dataset = load_and_cache_examples(self, tokenizer, processor, [None],evaluate=True)
         test_sampler = SequentialSampler(test_dataset) if self.local_rank == -1 else DistributedSampler(test_dataset)
         test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=test_batch_size)
 

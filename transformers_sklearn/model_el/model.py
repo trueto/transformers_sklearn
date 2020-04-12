@@ -9,6 +9,7 @@ class BertForEL(BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
+        self.alpha = config.alpha
 
         self.bert = BertModel(config)
         self.dense_1 = nn.Linear(config.hidden_size, 128)
@@ -42,9 +43,10 @@ class BertForEL(BertPreTrainedModel):
         sequence_output = outputs[0]
 
         # [b,1,dim]
-        first_token_tensors = sequence_output[:, 0]
-        start_entity_tensors = sequence_output[:, start_positions]
-        end_entity_tensors = sequence_output[:, end_positions]
+        seq_len = sequence_output.shape[1]
+        first_token_tensors = sequence_output[:, [0]*seq_len]
+        start_entity_tensors = sequence_output[:, start_positions+1]
+        end_entity_tensors = sequence_output[:, end_positions+1]
 
         merge_tensors = torch.cat([first_token_tensors,
                                    start_entity_tensors,
@@ -61,7 +63,7 @@ class BertForEL(BertPreTrainedModel):
                 loss_fn = nn.MSELoss()
                 loss = loss_fn(logits.view(-1), labels.view(-1))
             elif self.num_labels == 2:
-                loss_fn = FocalLoss()
+                loss_fn = FocalLoss(alpha=self.alpha)
                 loss = loss_fn(logits.view(-1, self.num_labels), labels.view(-1))
             else:
                 loss_fn = nn.CrossEntropyLoss()
@@ -78,6 +80,7 @@ class AlbertForEL(AlbertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
+        self.alpha = config.alpha
 
         self.albert = AlbertModel(config)
         self.dense_1 = nn.Linear(config.hidden_size, 128)
@@ -111,9 +114,10 @@ class AlbertForEL(AlbertPreTrainedModel):
         sequence_output = outputs[0]
 
         # [b,1,dim]
-        first_token_tensors = sequence_output[:, 0]
-        start_entity_tensors = sequence_output[:, start_positions]
-        end_entity_tensors = sequence_output[:, end_positions]
+        seq_len = sequence_output.shape[1]
+        first_token_tensors = sequence_output[:, [0]*seq_len]
+        start_entity_tensors = sequence_output[:, start_positions+1]
+        end_entity_tensors = sequence_output[:, end_positions+1]
 
         merge_tensors = torch.cat([first_token_tensors,
                                    start_entity_tensors,
@@ -130,7 +134,7 @@ class AlbertForEL(AlbertPreTrainedModel):
                 loss_fn = nn.MSELoss()
                 loss = loss_fn(logits.view(-1), labels.view(-1))
             elif self.num_labels == 2:
-                loss_fn = FocalLoss()
+                loss_fn = FocalLoss(alpha=self.alpha)
                 loss = loss_fn(logits.view(-1, self.num_labels), labels.view(-1))
             else:
                 loss_fn = nn.CrossEntropyLoss()
