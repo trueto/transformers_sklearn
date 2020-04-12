@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from transformers_sklearn.utils import FocalLoss
 from transformers import BertPreTrainedModel, BertModel
 from transformers_sklearn.model_albert_fix.modeling_albert import AlbertModel, AlbertPreTrainedModel
@@ -62,7 +63,10 @@ class BertForEL(BertPreTrainedModel):
                 loss_fn = nn.MSELoss()
                 loss = loss_fn(logits.view(-1), labels.view(-1))
             elif self.num_labels == 2:
-                loss_fn = FocalLoss()
+                y_ = labels.detach().cpu().numpy()
+                bin_count = np.bincount(y_)
+                alpha = list(bin_count / len(y_))
+                loss_fn = FocalLoss(gamma=2, alpha=alpha)
                 loss = loss_fn(logits.view(-1, self.num_labels), labels.view(-1))
             else:
                 loss_fn = nn.CrossEntropyLoss()
