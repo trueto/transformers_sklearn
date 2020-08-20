@@ -231,7 +231,7 @@ class BERTologyToVec(BaseEstimator,TransformerMixin):
         tokenizer = tokenizer_class.from_pretrained(self.output_dir)
         model.to(self.device)
 
-        # prepare data
+        # prepare datasets
         processor = ClassificationProcessor(X)
         test_batch_size = self.per_gpu_eval_batch_size * max(1, self.n_gpu)
         test_dataset = load_and_cache_examples(self, tokenizer, processor, [None], evaluate=True)

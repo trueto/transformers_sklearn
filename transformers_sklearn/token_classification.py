@@ -28,9 +28,13 @@ from transformers_sklearn.model_albert_fix import AlbertForTokenClassification,\
 
 from transformers_sklearn.model_electra import ElectraConfig,ElectraForTokenClassification,ElectraTokenizer
 
-ALL_MODELS = sum(
-    (tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, RobertaConfig, DistilBertConfig)),
-    ())
+from transformers import BERT_PRETRAINED_CONFIG_ARCHIVE_MAP, XLNET_PRETRAINED_CONFIG_ARCHIVE_MAP, \
+    XLM_PRETRAINED_CONFIG_ARCHIVE_MAP, ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP, DISTILBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
+ALL_MODELS = sum((tuple(conf.keys()) for conf in (BERT_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                XLNET_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                XLM_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                DISTILBERT_PRETRAINED_CONFIG_ARCHIVE_MAP)), ())
 
 MODEL_CLASSES = {
     "bert": (BertConfig, BertForTokenClassification, BertTokenizer),
@@ -219,7 +223,7 @@ def load_and_cache_examples(args, tokenizer,pad_token_label_id, X,y,mode):
     if args.local_rank not in [-1, 0] and mode=='train':
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
-    # Load data features from cache or dataset file
+    # Load datasets features from cache or dataset file
     cached_features_file = os.path.join(args.data_dir, "cached_{}_{}_{}".format(mode,
         args.model_type,
         str(args.max_seq_length)))

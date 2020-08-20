@@ -172,7 +172,7 @@ def train(args, train_dataset, model, tokenizer):
     if args.is_monitoring_process:
         tb_writer = SummaryWriter()
 
-    # Load the data
+    # Load the datasets
     val_len = int(len(train_dataset)*args.val_fraction)
     train_len = len(train_dataset) - val_len
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
@@ -452,7 +452,7 @@ class BertSumOptimizer(object):
 
 # So I can evaluate during training
 def summarize(args, source, encoder_token_type_ids, encoder_mask, model, tokenizer):
-    """ Summarize a whole batch returned by the data loader.
+    """ Summarize a whole batch returned by the datasets loader.
     """
 
     model_kwargs = {

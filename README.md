@@ -168,7 +168,7 @@ if __name__ == '__main__':
     value_counts = data_df['Tag'].value_counts()
     label_list = list(value_counts.to_dict().keys())
 
-    # ## 1. preparing data
+    # ## 1. preparing datasets
     X = []
     y = []
     for label, batch_df in data_df.groupby(by='Sentence #',sort=False):

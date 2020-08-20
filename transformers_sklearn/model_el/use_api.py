@@ -59,7 +59,7 @@ class BERTologyELClassifier(BaseEstimator,ClassifierMixin):
                  discr=False,lr_decay=10,search_cv=False):
         """
 
-        :param data_dir: The input data dir.used for cache the train_data.
+        :param data_dir: The input datasets dir.used for cache the train_data.
         :param model_type: Model type in ['bert','xlnet','xlm','roberta','distilbert','albert']
         :param model_name_or_path:Path to pre-trained model or shortcut name
         :param output_dir:The output directory where the model predictions and checkpoints will be written
@@ -243,7 +243,7 @@ class BERTologyELClassifier(BaseEstimator,ClassifierMixin):
             tokenizer = tokenizer_class.from_pretrained(self.output_dir)
         model.to(self.device)
 
-        # prepare data
+        # prepare datasets
         processor = ClassificationProcessor(X, start_positions, end_positions)
         test_batch_size = self.per_gpu_eval_batch_size * max(1, self.n_gpu)
         test_dataset = load_and_cache_examples(self, tokenizer, processor, [None],evaluate=True)

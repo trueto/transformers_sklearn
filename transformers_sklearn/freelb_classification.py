@@ -37,8 +37,13 @@ from transformers_sklearn.utils.classification_utils import ClassificationProces
 
 logger = logging.getLogger(__name__)
 
-ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, XLMConfig,
-                                                                                RobertaConfig, DistilBertConfig)), ())
+from transformers import BERT_PRETRAINED_CONFIG_ARCHIVE_MAP, XLNET_PRETRAINED_CONFIG_ARCHIVE_MAP, \
+    XLM_PRETRAINED_CONFIG_ARCHIVE_MAP, ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP, DISTILBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
+ALL_MODELS = sum((tuple(conf.keys()) for conf in (BERT_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                XLNET_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                XLM_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                DISTILBERT_PRETRAINED_CONFIG_ARCHIVE_MAP)), ())
 
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
@@ -82,7 +87,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
                  attention_probs_dropout_prob=0):
         """
 
-        :param data_dir: The input data dir.used for cache the train_data.
+        :param data_dir: The input datasets dir.used for cache the train_data.
         :param model_type: Model type in ['bert','xlnet','xlm','roberta','distilbert','albert']
         :param model_name_or_path:Path to pre-trained model or shortcut name
         :param output_dir:The output directory where the model predictions and checkpoints will be written
@@ -264,7 +269,7 @@ class BERTologyClassifier(BaseEstimator,ClassifierMixin):
         tokenizer = tokenizer_class.from_pretrained(self.output_dir)
         model.to(self.device)
 
-        # prepare data
+        # prepare datasets
         processor = ClassificationProcessor(X)
         test_batch_size = self.per_gpu_eval_batch_size * max(1, self.n_gpu)
         test_dataset = load_and_cache_examples(self,tokenizer,processor,[None],evaluate=True)

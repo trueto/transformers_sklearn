@@ -27,16 +27,22 @@ from transformers import XLMRobertaConfig,XLMRobertaForSequenceClassification,XL
 from transformers import FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer
 from transformers import CamembertConfig,CamembertForSequenceClassification,CamembertTokenizer
 
+
 from transformers_sklearn.model_albert_fix import AlbertConfig,\
     AlbertForSequenceClassification,AlbertTokenizer,BrightAlbertForSequenceClassification
-from transformers_sklearn.model_electra import ElectraConfig,ElectraForSequenceClassification,ElectraTokenizer
+from transformers_sklearn.model_electra import ElectraConfig, ElectraForSequenceClassification,ElectraTokenizer
 
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 logger = logging.getLogger(__name__)
 
-ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, XLMConfig,
-                                                                                RobertaConfig, DistilBertConfig)), ())
+from transformers import BERT_PRETRAINED_CONFIG_ARCHIVE_MAP, XLNET_PRETRAINED_CONFIG_ARCHIVE_MAP, \
+    XLM_PRETRAINED_CONFIG_ARCHIVE_MAP, ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP, DISTILBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
+ALL_MODELS = sum((tuple(conf.keys()) for conf in (BERT_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                XLNET_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                XLM_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP,
+                                                                                DISTILBERT_PRETRAINED_CONFIG_ARCHIVE_MAP)), ())
 
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
@@ -77,7 +83,7 @@ class BERTologyRegressor(BaseEstimator,RegressorMixin):
                  local_rank=-1, val_fraction=0.1):
         """
 
-        :param data_dir: The input data dir.used for cache the train_data.
+        :param data_dir: The input datasets dir.used for cache the train_data.
         :param model_type: Model type in ['bert','xlnet','xlm','roberta','distilbert','albert']
         :param model_name_or_path:Path to pre-trained model or shortcut name
         :param output_dir:The output directory where the model predictions and checkpoints will be written

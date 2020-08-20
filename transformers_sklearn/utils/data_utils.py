@@ -29,7 +29,7 @@ def unpack_text_pairs(X):
 
 def unpack_data(X, y=None):
     """
-    Prepare data
+    Prepare datasets
     """
     X = to_numpy(X)
     texts_a, texts_b = unpack_text_pairs(X)

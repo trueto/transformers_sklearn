@@ -14,7 +14,7 @@ try:
     from sklearn.metrics import matthews_corrcoef, f1_score
     _has_sklearn = True
 except (AttributeError, ImportError) as e:
-    logger.warning("To use data.metrics please install scikit-learn. See https://scikit-learn.org/stable/index.html")
+    logger.warning("To use datasets.metrics please install scikit-learn. See https://scikit-learn.org/stable/index.html")
     _has_sklearn = False
 
 def is_sklearn_available():
@@ -39,7 +39,7 @@ def load_and_cache_examples(args, tokenizer,processor,label_list,evaluate=False)
     if args.local_rank not in [-1, 0] and not evaluate:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
-    # Load data features from cache or dataset file
+    # Load datasets features from cache or dataset file
     cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}'.format(
         'test' if evaluate else 'train',
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
@@ -84,10 +84,10 @@ def convert_examples_to_features(examples, tokenizer,
                                   pad_token_segment_id=0,
                                   mask_padding_with_zero=True):
     """
-    Loads a data file into a list of ``InputFeatures``
+    Loads a datasets file into a list of ``InputFeatures``
 
     Args:
-        examples: List of ``InputExamples`` or ``tf.data.Dataset`` containing the examples.
+        examples: List of ``InputExamples`` or ``tf.datasets.Dataset`` containing the examples.
         tokenizer: Instance of a tokenizer that will tokenize the examples
         max_length: Maximum example length
         label_list: List of labels. Can be obtained from the processor using the ``processor.get_labels()`` method
@@ -99,7 +99,7 @@ def convert_examples_to_features(examples, tokenizer,
             actual values)
 
     Returns:
-        If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
+        If the ``examples`` input is a ``tf.datasets.Dataset``, will return a ``tf.datasets.Dataset``
         containing the task-specific features. If the input is a list of ``InputExamples``, will return
         a list of task-specific ``InputFeatures`` which can be fed to the model.
 
@@ -197,7 +197,7 @@ class InputExample(object):
 
 class InputFeatures(object):
     """
-    A single set of features of data.
+    A single set of features of datasets.
 
     Args:
         input_ids: Indices of input sequence tokens in the vocabulary.

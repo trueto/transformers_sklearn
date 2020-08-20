@@ -20,7 +20,7 @@ class InputExample(object):
         self.labels = labels
 
 class InputFeatures(object):
-    """A single set of features of data."""
+    """A single set of features of datasets."""
 
     def __init__(self, input_ids, input_mask, segment_ids, label_ids):
         self.input_ids = input_ids
@@ -58,7 +58,7 @@ def convert_examples_to_features(examples,
                                  pad_token_label_id=-100,
                                  sequence_a_segment_id=0,
                                  mask_padding_with_zero=True):
-    """ Loads a data file into a list of `InputBatch`s
+    """ Loads a datasets file into a list of `InputBatch`s
         `cls_token_at_end` define the location of the CLS token:
             - False (Default, BERT/XLM pattern): [CLS] + A + [SEP] + B + [SEP]
             - True (XLNet/GPT pattern): A + [SEP] + B + [SEP] + [CLS]
