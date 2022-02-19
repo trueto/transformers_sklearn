@@ -14,7 +14,7 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 from torch.utils.data.distributed import DistributedSampler
 
 from sklearn.base import BaseEstimator,ClassifierMixin
-from sklearn.metrics.classification import classification_report
+from sklearn.metrics import classification_report
 
 from transformers import BertConfig,BertForSequenceClassification,BertTokenizer
 from transformers import RobertaConfig,RobertaTokenizer,RobertaForSequenceClassification
