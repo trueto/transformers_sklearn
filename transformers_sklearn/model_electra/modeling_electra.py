@@ -7,8 +7,10 @@ import torch.nn as nn
 from .configuration_electra import ElectraConfig
 from transformers.activations import get_activation
 
-from transformers.modeling_bert import BertEmbeddings,BertEncoder,\
-    BertLayerNorm,BertPreTrainedModel,BertPooler
+from transformers.models.bert.modeling_bert import BertEmbeddings,BertEncoder,\
+    BertPreTrainedModel,BertPooler
+
+BertLayerNorm = torch.nn.LayerNorm
 
 logger = logging.getLogger(__name__)
 

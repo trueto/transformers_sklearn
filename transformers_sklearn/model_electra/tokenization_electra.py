@@ -1,4 +1,4 @@
-from transformers.tokenization_bert import BertTokenizer, BertTokenizerFast
+from transformers import BertTokenizer, BertTokenizerFast
 
 
 VOCAB_FILES_NAMES = {"vocab_file": "vocab.txt"}
